@@ -178,7 +178,7 @@ export function useFlashDrop(contractAddress: Address) {
       // than this signed ceiling. Without the margin, a few seconds of network latency or client
       // clock drift between signing and the transaction landing could push the true on-chain price
       // fractionally past the exact instant that was displayed, causing an avoidable revert.
-      const safetyMarginSeconds = 10n;
+      const safetyMarginSeconds = BigInt(import.meta.env.VITE_PERMIT_SAFETY_MARGIN_SECONDS || "10");
       const permittedAmount = priceAtElapsed(
         sale,
         elapsedNow > safetyMarginSeconds ? elapsedNow - safetyMarginSeconds : 0n,

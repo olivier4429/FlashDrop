@@ -3,9 +3,9 @@ import { useFlashDrop } from "./lib/useFlashDrop";
 import "./App.css";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_FLASHDROP_ADDRESS as string | undefined;
-const PRODUCT_NAME = import.meta.env.VITE_PRODUCT_NAME || "Mystery Drop #1";
+const PRODUCT_NAME = import.meta.env.VITE_PRODUCT_NAME || "Free Fall";
 const PRODUCT_DESCRIPTION =
-  import.meta.env.VITE_PRODUCT_DESCRIPTION || "A one-of-a-kind digital item. First confirmed buyer wins it.";
+  import.meta.env.VITE_PRODUCT_DESCRIPTION || "The price is in free fall. First confirmed buyer wins it.";
 
 function formatUsdc(amount: bigint): string {
   return Number(formatUnits(amount, 6)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
