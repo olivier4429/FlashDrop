@@ -161,21 +161,21 @@ Local end-to-end testing (contract + frontend together, no testnet funds needed)
   the script for `TEST_BUYER_ADDRESS`/`TEST_MINT_AMOUNT` overrides). Needed for the buy() flow to
   work at all locally; the passive price countdown/read side works without it.
 - Then deploy as above with `--network localNode`
-- In `frontend/.env.local` (gitignored): `VITE_FLASHDROP_ADDRESS_LOCAL=<deployed address>`, then
-  pick "Local (Hardhat node)" from the app's network dropdown
+- In `frontend/.env.local` (gitignored): `VITE_FLASHDROP_ADDRESS=<deployed address>`, then pick
+  "Local (Hardhat node)" from the app's network dropdown
 - To test on Arc testnet instead with a real wallet (MetaMask etc.): deploy with `--network arcTestnet`,
-  then set `VITE_FLASHDROP_ADDRESS_TESTNET=<deployed address>` in `frontend/.env.local` and pick
-  "Arc Testnet" in the dropdown. No manual wallet network setup needed — connecting in the app
-  prompts the wallet to add/switch to Arc Testnet automatically (see `ensureArcChain` in
-  `useFlashDrop.ts`).
+  update `VITE_FLASHDROP_ADDRESS` in `frontend/.env.local` to that deployment, and pick "Arc
+  Testnet" in the dropdown. No manual wallet network setup needed — connecting in the app prompts
+  the wallet to add/switch to Arc Testnet automatically (see `ensureArcChain` in `useFlashDrop.ts`).
 
 Frontend (`cd frontend`):
 - `npm install` — install dependencies (first time only)
 - `npm run dev` — dev server (default `http://localhost:5173`)
 - `npm run build` — production build
 - Needs `.env.local` (gitignored) filled in from `.env.example`. The app has a runtime network
-  dropdown (Arc Testnet / Arc Mainnet / local node) — each needs its own
-  `VITE_FLASHDROP_ADDRESS_{TESTNET,MAINNET,LOCAL}` since a contract deployed on one network doesn't
-  exist on another; `VITE_CHAIN_ID` only picks which one is pre-selected on load (defaults to
-  Testnet if unset, deliberately not Mainnet, to avoid landing on an unconfigured network — see
-  `DEFAULT_NETWORK_INDEX` in `arcChain.ts`).
+  dropdown (Arc Testnet / Arc Mainnet / local node) that only switches which chain the wallet/RPC
+  talks to — `VITE_FLASHDROP_ADDRESS` is a single value used regardless of the selection (there's
+  only one active deployment being tested at a time in this workflow; update it yourself when you
+  redeploy to a different network). `VITE_CHAIN_ID` picks which network is pre-selected on load
+  (defaults to Testnet if unset, deliberately not Mainnet, to avoid landing on an unconfigured
+  network — see `DEFAULT_NETWORK_INDEX` in `arcChain.ts`).

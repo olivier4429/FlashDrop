@@ -65,14 +65,22 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [status, setStatus] = useState<BuyStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  // Null while the very first read is still in flight; a message once a read has actually failed
+  // (e.g. VITE_FLASHDROP_ADDRESS points at a network the wallet isn't currently reading, since the
+  // app uses one address across all networks in the dropdown rather than one per network).
+  const [readError, setReadError] = useState<string | null>(null);
 
   // Switching network or contract (the dropdown in App.tsx) invalidates any existing wallet
   // connection — it was bound to a different chain, so force a fresh "Connect wallet" instead of
-  // silently continuing to sign for the wrong network.
+  // silently continuing to sign for the wrong network. Also drop any sale data read from whichever
+  // network/contract was previously selected, so a failed read on the new one shows a clear error
+  // instead of a frozen, stale price left over from before the switch.
   useEffect(() => {
     walletClientRef.current = null;
     setAccount(null);
     setStatus("idle");
+    setSale(null);
+    setReadError(null);
   }, [chain, contractAddress]);
 
   // Polls the full sale state, including startPrice/endPrice/startTime/duration — these aren't
@@ -84,16 +92,27 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   useEffect(() => {
     let cancelled = false;
     const refresh = async () => {
-      const [startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] = await Promise.all([
-        publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startPrice" }),
-        publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "endPrice" }),
-        publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startTime" }),
-        publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "duration" }),
-        publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "sold" }),
-        publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "buyer" }),
-        publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" }),
-      ]);
+      let startPrice: bigint, endPrice: bigint, startTime: bigint, duration: bigint;
+      let isSold: boolean, currentBuyer: Address, price: bigint;
+      try {
+        [startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] = await Promise.all([
+          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startPrice" }),
+          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "endPrice" }),
+          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startTime" }),
+          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "duration" }),
+          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "sold" }),
+          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "buyer" }),
+          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" }),
+        ]);
+      } catch {
+        if (!cancelled) {
+          setReadError(`No FlashDrop contract found at ${contractAddress} on ${chain.name}.`);
+          setSale(null);
+        }
+        return;
+      }
       if (cancelled) return;
+      setReadError(null);
       setSale({ startPrice, endPrice, startTime, duration });
       setSold(isSold);
       setBuyer(isSold ? currentBuyer : null);
@@ -229,5 +248,18 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     }
   }, [account, sale, publicClient, contractAddress, chain]);
 
-  return { account, connect, sale, displayedPrice, auctionEnded, sold, buyer, soldPrice, status, error, buyNow };
+  return {
+    account,
+    connect,
+    sale,
+    displayedPrice,
+    auctionEnded,
+    sold,
+    buyer,
+    soldPrice,
+    status,
+    error,
+    buyNow,
+    readError,
+  };
 }

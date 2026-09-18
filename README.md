@@ -113,18 +113,17 @@ npm run dev
 Fill in `frontend/.env.local`:
 
 ```
-VITE_FLASHDROP_ADDRESS_TESTNET=0x...   # deployed instance on Arc Testnet, if you have one
-VITE_FLASHDROP_ADDRESS_MAINNET=0x...   # deployed instance on Arc Mainnet, if you have one
-VITE_FLASHDROP_ADDRESS_LOCAL=0x...     # deployed instance on the local Hardhat node, if you have one
-VITE_CHAIN_ID=5042002                  # which one is pre-selected: 5042002 = Testnet, 5042 = Mainnet, 31337 = local
+VITE_FLASHDROP_ADDRESS=0x...          # the deployed contract address
+VITE_CHAIN_ID=5042002                 # which network is pre-selected: 5042002 = Testnet, 5042 = Mainnet, 31337 = local
 VITE_PRODUCT_NAME="Free Fall"
 VITE_PRODUCT_DESCRIPTION="The price is in free fall. First confirmed buyer wins it."
 ```
 
-You don't need all three addresses — leave the ones you haven't deployed blank. The app has a
-network dropdown (top-right of the card) to switch between Arc Testnet, Arc Mainnet and the local
-node at runtime; switching shows whichever contract is configured for that network, or a "no
-contract configured" message if you haven't deployed there yet.
+The app has a network dropdown (top-right of the card) to switch between Arc Testnet, Arc Mainnet
+and the local Hardhat node at runtime — it changes which chain the wallet/RPC talks to, using the
+same `VITE_FLASHDROP_ADDRESS` regardless of which one is selected (there's only ever one active
+deployment being tested at a time in this workflow; update that one value yourself if you redeploy
+to a different network).
 
 Open the app, pick a network, click **Connect wallet** and pick the account you funded with
 testnet USDC — the app itself prompts your wallet to add/switch to that network automatically, no
@@ -149,7 +148,7 @@ START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
   npx hardhat run script/deploy.ts --network localNode
 ```
 
-Then set `VITE_FLASHDROP_ADDRESS_LOCAL` in `frontend/.env.local` to the deployed address, pick
+Then set `VITE_FLASHDROP_ADDRESS` in `frontend/.env.local` to the deployed address, pick
 "Local (Hardhat node)" from the app's network dropdown, add a `http://127.0.0.1:8545` / chain ID
 `31337` network to your wallet, and import Hardhat's well-known test account #0 private key
 (`0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` — public, test-only, never

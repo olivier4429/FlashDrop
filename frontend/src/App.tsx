@@ -4,6 +4,7 @@ import { DEFAULT_NETWORK_INDEX, NETWORKS } from "./lib/arcChain";
 import { useFlashDrop } from "./lib/useFlashDrop";
 import "./App.css";
 
+const CONTRACT_ADDRESS = import.meta.env.VITE_FLASHDROP_ADDRESS as string | undefined;
 const PRODUCT_NAME = import.meta.env.VITE_PRODUCT_NAME || "Free Fall";
 const PRODUCT_DESCRIPTION =
   import.meta.env.VITE_PRODUCT_DESCRIPTION || "The price is in free fall. First confirmed buyer wins it.";
@@ -17,8 +18,12 @@ function shortAddress(address: string): string {
 }
 
 function AuctionView({ contractAddress, chain }: { contractAddress: Address; chain: (typeof NETWORKS)[number]["chain"] }) {
-  const { account, connect, sale, displayedPrice, auctionEnded, sold, buyer, soldPrice, status, error, buyNow } =
+  const { account, connect, sale, displayedPrice, auctionEnded, sold, buyer, soldPrice, status, error, buyNow, readError } =
     useFlashDrop(contractAddress, chain);
+
+  if (readError) {
+    return <p className="description">{readError} Check that this network matches where you deployed it.</p>;
+  }
 
   const progress =
     sale && displayedPrice !== null && sale.startPrice !== sale.endPrice
@@ -94,7 +99,6 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
 function App() {
   const [networkIndex, setNetworkIndex] = useState(DEFAULT_NETWORK_INDEX);
   const network = NETWORKS[networkIndex];
-  const contractAddress = import.meta.env[network.addressEnvVar] as string | undefined;
 
   const networkPicker = (
     <select
@@ -120,13 +124,14 @@ function App() {
         <h1>{PRODUCT_NAME}</h1>
         <p className="description">{PRODUCT_DESCRIPTION}</p>
 
-        {!contractAddress || !isAddress(contractAddress) ? (
+        {!CONTRACT_ADDRESS || !isAddress(CONTRACT_ADDRESS) ? (
           <p className="description">
-            No contract configured for {network.label}. Set <code>{network.addressEnvVar}</code> in{" "}
-            <code>frontend/.env.local</code> (see <code>.env.example</code>) and restart the dev server.
+            Set <code>VITE_FLASHDROP_ADDRESS</code> in <code>frontend/.env.local</code> (see{" "}
+            <code>.env.example</code>) to a deployed FlashDrop contract address and restart the dev
+            server.
           </p>
         ) : (
-          <AuctionView contractAddress={contractAddress} chain={network.chain} />
+          <AuctionView contractAddress={CONTRACT_ADDRESS} chain={network.chain} />
         )}
       </div>
     </main>

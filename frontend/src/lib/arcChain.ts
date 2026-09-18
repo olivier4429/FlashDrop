@@ -48,15 +48,18 @@ export const localDev = defineChain({
   },
 });
 
-// The networks selectable from the UI's network dropdown (see App.tsx). Each has its own deployed
-// FlashDrop address, since a contract deployed on one network doesn't exist on another — switching
-// networks means switching which contract we're reading from too, not just the RPC endpoint.
+// The networks selectable from the UI's network dropdown (see App.tsx). There's a single
+// VITE_FLASHDROP_ADDRESS used regardless of which one is picked — in practice there's only ever
+// one active deployment being tested at a time, so the dropdown just controls which chain the
+// wallet/RPC talks to, not a separate address per network. If you deploy to two networks at once
+// and need both addresses live simultaneously, that's the point where per-network address env
+// vars would earn their keep — not needed for the current single-deployment workflow.
 // Testnet listed first: it's the safe default while testing, so an unconfigured/misconfigured
-// VITE_CHAIN_ID can't silently land the app on mainnet with nothing to show.
+// VITE_CHAIN_ID can't silently land the app on mainnet.
 export const NETWORKS = [
-  { chain: arcTestnet, label: "Arc Testnet", addressEnvVar: "VITE_FLASHDROP_ADDRESS_TESTNET" },
-  { chain: arcMainnet, label: "Arc Mainnet", addressEnvVar: "VITE_FLASHDROP_ADDRESS_MAINNET" },
-  { chain: localDev, label: "Local (Hardhat node)", addressEnvVar: "VITE_FLASHDROP_ADDRESS_LOCAL" },
+  { chain: arcTestnet, label: "Arc Testnet" },
+  { chain: arcMainnet, label: "Arc Mainnet" },
+  { chain: localDev, label: "Local (Hardhat node)" },
 ] as const;
 
 // Optional initial selection via VITE_CHAIN_ID (e.g. to default a deployed demo build to
