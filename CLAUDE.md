@@ -87,9 +87,19 @@ with comments restating what a line obviously does.
 
 ## Tech stack
 
-- Solidity (contract), deployed via Arc Foundry (see
-  `docs/arc-notes/04-build-deployer.md` for the toolchain: `arc-forge`,
-  `arc-cast`, `arc-anvil`)
+- Solidity (contract), built/tested/deployed via **Hardhat** (switched from
+  Arc Foundry on 2026-09-18: Arc Foundry has no native Windows binary —
+  see `docs/arc-notes/04-build-deployer.md` — which would have required a
+  dedicated Linux VM just for the toolchain; Hardhat is Node-based and runs
+  natively on Windows, so no VM is needed). Arc Foundry's `arc-anvil` had
+  the advantage of emulating Arc's protocol-specific EVM differences (see
+  "Arc-specific gotchas" below); Hardhat's local network is a generic EVM
+  simulator and does not model those. This is an acceptable gap for this
+  contract specifically because FlashDrop never touches the behaviors that
+  actually differ on Arc (no `SELFDESTRUCT`, no `PREVRANDAO` reliance, no
+  native-value transfers) — it only calls `USDC.transferFrom` indirectly
+  through Permit2, an ordinary ERC-20 interaction. Deployment and any final
+  pre-launch dry run still happen against the real Arc mainnet RPC.
 - TypeScript, Node.js for any off-chain tooling / frontend
 - `viem` for on-chain reads/writes (RPC: `https://rpc.mainnet.arc.io`,
   chain ID `5042`)
@@ -126,6 +136,13 @@ addresses (kept in case we revisit the Liquidation Watchtower direction).
 
 ## Commands
 
-_(fill in as the project takes shape — e.g. `pnpm dev`, `pnpm test`,
-`arc-forge test --network arc`. Keep this section up to date so I don't
-have to repeat myself.)_
+Contract (`cd contracts`):
+- `npm install` — install dependencies (first time only)
+- `npm run compile` — compile contracts (`hardhat compile`)
+- `npm test` — run the Solidity test suite (`hardhat test solidity`)
+- `START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/deploy.ts --network hardhatMainnet` — dry-run deploy against the local simulated network
+- Same command with `--network arcTestnet` / `--network arcMainnet` for a
+  real deploy (needs `.env` filled in from `.env.example`, and a wallet
+  funded with real USDC for mainnet — no faucet there)
+
+Frontend: _(fill in once scaffolded)_

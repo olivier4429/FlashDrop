@@ -36,7 +36,7 @@ contract FlashDropTest is Test {
 
     // ---- currentPrice() ----
 
-    function test_currentPrice_atStart() public {
+    function test_currentPrice_atStart() public view {
         assertEq(drop.currentPrice(), START_PRICE);
     }
 

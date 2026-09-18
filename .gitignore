@@ -1,7 +1,6 @@
-# Foundry
+# Hardhat
 contracts/cache/
-contracts/out/
-contracts/lib/
+contracts/artifacts/
 
 # Env / secrets
 .env
