@@ -145,4 +145,18 @@ Contract (`cd contracts`):
   real deploy (needs `.env` filled in from `.env.example`, and a wallet
   funded with real USDC for mainnet — no faucet there)
 
-Frontend: _(fill in once scaffolded)_
+Local end-to-end testing (contract + frontend together, no testnet funds needed):
+- `cd contracts && npx hardhat node` — persistent local JSON-RPC node on `http://127.0.0.1:8545`
+- In another shell: `cd contracts && START_PRICE=... END_PRICE=... DURATION_SECONDS=... npx hardhat run script/deploy.ts --network localNode`
+- In `frontend/.env.local` (gitignored): `VITE_FLASHDROP_ADDRESS=<deployed address>` and `VITE_CHAIN_ID=31337`
+- Note: this local node has no real USDC/Permit2 deployed at Arc's addresses, so the buy() flow
+  needs mocks placed there first (`hardhat_setCode`) to test past "Connect wallet" — see the
+  mocks in `contracts/test/mocks/` for a working reference. The passive price countdown/read side
+  works immediately without any of that.
+
+Frontend (`cd frontend`):
+- `npm install` — install dependencies (first time only)
+- `npm run dev` — dev server (default `http://localhost:5173`)
+- `npm run build` — production build
+- Needs `.env.local` (gitignored) filled in from `.env.example`, in particular
+  `VITE_FLASHDROP_ADDRESS` pointing at a deployed FlashDrop instance

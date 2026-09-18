@@ -36,6 +36,14 @@ export default defineConfig({
       type: "edr-simulated",
       chainType: "l1",
     },
+    // A persistent local node (`npx hardhat node`), reachable over plain HTTP — unlike
+    // `hardhatMainnet` above (an in-process simulator with no RPC port), this lets an external
+    // process such as the frontend dev server connect to a local chain for manual testing.
+    localNode: {
+      type: "http",
+      chainType: "l1",
+      url: "http://127.0.0.1:8545",
+    },
     arcTestnet: {
       type: "http",
       chainType: "l1",
