@@ -187,3 +187,8 @@ Frontend (`cd frontend`):
   found" error even with a correct address/network. Each chain definition in `arcChain.ts` needs
   its own `contracts.multicall3.address` for viem's `multicall()` to work — it is NOT a global
   default. Arc's Multicall3 is at the standard canonical address on both mainnet and testnet.
+- The poll also adapts its own rate instead of running forever at one fixed interval (see the
+  `useEffect` in `useFlashDrop.ts`): 750ms only while a sale is active and unsold (when fast "sold"
+  detection actually matters for the demo), 3s once sold or after repeated read failures, and fully
+  paused (zero RPC calls) while the browser tab isn't visible, resuming immediately when it is
+  again. Verified with a headless-browser session tracking real request counts per phase.

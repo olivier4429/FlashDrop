@@ -86,19 +86,37 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   // Polls the full sale state, including startPrice/endPrice/startTime/duration — these aren't
   // truly immutable: the seller can reuse this same contract for a new item via startNewSale once
   // the current one sells (see FlashDrop.sol), so the frontend has to keep re-reading them rather
-  // than fetching once and assuming they're fixed forever. The same short interval doubles as a
-  // live demonstration of Arc's speed: the UI flips to "sold" almost as fast as the winning
-  // transaction lands, with nothing left ambiguous about who won.
+  // than fetching once and assuming they're fixed forever.
   //
   // Batched into a single `multicall` (Multicall3, deployed on Arc at the same canonical address
   // viem defaults to — see docs/arc-notes/03-adresses-contrats.md) instead of 7 separate eth_call
   // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with 7
   // parallel requests every cycle, which surfaced as a misleading "no contract found" error even
   // though the contract and address were both correct — one request per poll avoids that entirely.
+  //
+  // This self-schedules its next check (setTimeout, not setInterval) instead of polling forever at
+  // a single fixed rate, so it only spends RPC calls when a fast response actually matters:
+  //   - FAST (750ms) only while a sale is active and unsold — this is what lets the UI flip to
+  //     "sold" almost as fast as the winning transaction lands, demonstrating Arc's speed.
+  //   - SLOW (3s) once sold (waiting for a possible startNewSale), or after repeated read failures
+  //     (a wrong address/network isn't going to fix itself by retrying faster).
+  //   - PAUSED entirely while the tab isn't visible, resuming immediately when it is again.
   useEffect(() => {
     let cancelled = false;
+    let timeoutId: ReturnType<typeof setTimeout>;
     let consecutiveFailures = 0;
+
+    const scheduleNext = (delayMs: number) => {
+      if (cancelled) return;
+      timeoutId = setTimeout(refresh, delayMs);
+    };
+
     const refresh = async () => {
+      if (document.visibilityState === "hidden") {
+        scheduleNext(3000); // just re-check visibility later; no RPC call while backgrounded
+        return;
+      }
+
       const results = await publicClient
         .multicall({
           contracts: [
@@ -125,6 +143,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
           setReadError(`Could not read a FlashDrop contract at ${contractAddress} on ${chain.name}.`);
           setSale(null);
         }
+        scheduleNext(3000);
         return;
       }
       consecutiveFailures = 0;
@@ -135,14 +154,23 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       setSold(isSold);
       setBuyer(isSold ? currentBuyer : null);
       setSoldPrice(isSold ? price : null);
+      scheduleNext(isSold ? 3000 : 750);
     };
+
     refresh();
-    const interval = setInterval(refresh, 750);
+    const onVisible = () => {
+      if (document.visibilityState === "visible") {
+        clearTimeout(timeoutId);
+        refresh();
+      }
+    };
+    document.addEventListener("visibilitychange", onVisible);
     return () => {
       cancelled = true;
-      clearInterval(interval);
+      clearTimeout(timeoutId);
+      document.removeEventListener("visibilitychange", onVisible);
     };
-  }, [publicClient, contractAddress]);
+  }, [publicClient, contractAddress, chain]);
 
   // Drives the live countdown display; stops once the item is sold.
   useEffect(() => {
