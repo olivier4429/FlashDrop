@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Address, createPublicClient, createWalletClient, custom, http, maxUint256 } from "viem";
-import { activeChain, PERMIT2_ADDRESS, USDC_ADDRESS } from "./arcChain";
+import { type Address, type Chain, createPublicClient, createWalletClient, custom, http, maxUint256 } from "viem";
+import { PERMIT2_ADDRESS, USDC_ADDRESS } from "./arcChain";
 import { erc20Abi, flashDropAbi } from "./abi";
 
 export interface SaleParams {
@@ -40,20 +40,20 @@ function randomNonce(): bigint {
 
 type ArcWalletClient = ReturnType<typeof createWalletClient>;
 
-async function ensureArcChain(wallet: ArcWalletClient) {
+async function ensureArcChain(wallet: ArcWalletClient, chain: Chain) {
   try {
-    await wallet.switchChain({ id: activeChain.id });
+    await wallet.switchChain({ id: chain.id });
   } catch {
     // Most wallets don't have a network as new as Arc pre-configured — add it, then switch.
     // Arc's native currency is USDC itself (the 18-decimal native interface), not a volatile
     // token; see arcChain.ts for why that's still a completely ordinary `defineChain` call.
-    await wallet.addChain({ chain: activeChain });
-    await wallet.switchChain({ id: activeChain.id });
+    await wallet.addChain({ chain });
+    await wallet.switchChain({ id: chain.id });
   }
 }
 
-export function useFlashDrop(contractAddress: Address) {
-  const publicClient = useMemo(() => createPublicClient({ chain: activeChain, transport: http() }), []);
+export function useFlashDrop(contractAddress: Address, chain: Chain) {
+  const publicClient = useMemo(() => createPublicClient({ chain, transport: http() }), [chain]);
 
   const [account, setAccount] = useState<Address | null>(null);
   const walletClientRef = useRef<ArcWalletClient | null>(null);
@@ -65,6 +65,15 @@ export function useFlashDrop(contractAddress: Address) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [status, setStatus] = useState<BuyStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+
+  // Switching network or contract (the dropdown in App.tsx) invalidates any existing wallet
+  // connection — it was bound to a different chain, so force a fresh "Connect wallet" instead of
+  // silently continuing to sign for the wrong network.
+  useEffect(() => {
+    walletClientRef.current = null;
+    setAccount(null);
+    setStatus("idle");
+  }, [chain, contractAddress]);
 
   // Polls the full sale state, including startPrice/endPrice/startTime/duration — these aren't
   // truly immutable: the seller can reuse this same contract for a new item via startNewSale once
@@ -117,9 +126,9 @@ export function useFlashDrop(contractAddress: Address) {
     try {
       const injected = (window as { ethereum?: Parameters<typeof custom>[0] }).ethereum;
       if (!injected) throw new Error("No wallet found — install MetaMask or a similar Arc-compatible wallet");
-      const wallet = createWalletClient({ chain: activeChain, transport: custom(injected) });
+      const wallet = createWalletClient({ chain, transport: custom(injected) });
       const [address] = await wallet.requestAddresses();
-      await ensureArcChain(wallet);
+      await ensureArcChain(wallet, chain);
       walletClientRef.current = wallet;
       setAccount(address);
       setStatus("idle");
@@ -127,7 +136,7 @@ export function useFlashDrop(contractAddress: Address) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("error");
     }
-  }, []);
+  }, [chain]);
 
   const buyNow = useCallback(async () => {
     const wallet = walletClientRef.current;
@@ -154,7 +163,7 @@ export function useFlashDrop(contractAddress: Address) {
           abi: erc20Abi,
           functionName: "approve",
           args: [PERMIT2_ADDRESS, maxUint256],
-          chain: activeChain,
+          chain,
         });
         await publicClient.waitForTransactionReceipt({ hash: approveHash });
       }
@@ -179,7 +188,7 @@ export function useFlashDrop(contractAddress: Address) {
         account,
         domain: {
           name: "Permit2",
-          chainId: activeChain.id,
+          chainId: chain.id,
           verifyingContract: PERMIT2_ADDRESS,
         },
         types: {
@@ -210,7 +219,7 @@ export function useFlashDrop(contractAddress: Address) {
         abi: flashDropAbi,
         functionName: "buy",
         args: [{ permitted: { token: USDC_ADDRESS, amount: permittedAmount }, nonce, deadline }, signature],
-        chain: activeChain,
+        chain,
       });
       await publicClient.waitForTransactionReceipt({ hash: buyHash });
       setStatus("done");
@@ -218,7 +227,7 @@ export function useFlashDrop(contractAddress: Address) {
       setError(err instanceof Error ? err.message : String(err));
       setStatus("error");
     }
-  }, [account, sale, publicClient, contractAddress]);
+  }, [account, sale, publicClient, contractAddress, chain]);
 
   return { account, connect, sale, displayedPrice, auctionEnded, sold, buyer, soldPrice, status, error, buyNow };
 }

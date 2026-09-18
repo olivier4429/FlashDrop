@@ -15,7 +15,7 @@ export const arcMainnet = defineChain({
   name: "Arc",
   nativeCurrency,
   rpcUrls: {
-    default: { http: [import.meta.env.VITE_ARC_RPC_URL || "https://rpc.mainnet.arc.io"] },
+    default: { http: [import.meta.env.VITE_ARC_MAINNET_RPC_URL || "https://rpc.mainnet.arc.io"] },
   },
   blockExplorers: {
     default: { name: "Arc Explorer", url: "https://explorer.arc.io" },
@@ -27,7 +27,7 @@ export const arcTestnet = defineChain({
   name: "Arc Testnet",
   nativeCurrency,
   rpcUrls: {
-    default: { http: [import.meta.env.VITE_ARC_RPC_URL || "https://rpc.testnet.arc.io"] },
+    default: { http: [import.meta.env.VITE_ARC_TESTNET_RPC_URL || "https://rpc.testnet.arc.io"] },
   },
   blockExplorers: {
     default: { name: "Arc Testnet Explorer", url: "https://explorer.testnet.arc.io" },
@@ -48,13 +48,23 @@ export const localDev = defineChain({
   },
 });
 
-// Which network the app targets, set at build time via VITE_CHAIN_ID (defaults to mainnet).
-export const activeChain =
-  import.meta.env.VITE_CHAIN_ID === String(localDev.id)
-    ? localDev
-    : import.meta.env.VITE_CHAIN_ID === String(arcTestnet.id)
-      ? arcTestnet
-      : arcMainnet;
+// The networks selectable from the UI's network dropdown (see App.tsx). Each has its own deployed
+// FlashDrop address, since a contract deployed on one network doesn't exist on another — switching
+// networks means switching which contract we're reading from too, not just the RPC endpoint.
+// Testnet listed first: it's the safe default while testing, so an unconfigured/misconfigured
+// VITE_CHAIN_ID can't silently land the app on mainnet with nothing to show.
+export const NETWORKS = [
+  { chain: arcTestnet, label: "Arc Testnet", addressEnvVar: "VITE_FLASHDROP_ADDRESS_TESTNET" },
+  { chain: arcMainnet, label: "Arc Mainnet", addressEnvVar: "VITE_FLASHDROP_ADDRESS_MAINNET" },
+  { chain: localDev, label: "Local (Hardhat node)", addressEnvVar: "VITE_FLASHDROP_ADDRESS_LOCAL" },
+] as const;
+
+// Optional initial selection via VITE_CHAIN_ID (e.g. to default a deployed demo build to
+// mainnet); falls back to Testnet (index 0) if unset or unrecognized.
+export const DEFAULT_NETWORK_INDEX = Math.max(
+  0,
+  NETWORKS.findIndex((n) => String(n.chain.id) === import.meta.env.VITE_CHAIN_ID),
+);
 
 // USDC ERC-20 interface address — identical on Arc mainnet and testnet. Confirmed via
 // docs.arc.io / explorer.arc.io Blockscout on 2026-09-17 (see docs/arc-notes/03-adresses-contrats.md).

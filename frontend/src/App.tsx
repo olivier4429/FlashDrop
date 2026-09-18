@@ -1,8 +1,9 @@
+import { useState } from "react";
 import { formatUnits, isAddress, type Address } from "viem";
+import { DEFAULT_NETWORK_INDEX, NETWORKS } from "./lib/arcChain";
 import { useFlashDrop } from "./lib/useFlashDrop";
 import "./App.css";
 
-const CONTRACT_ADDRESS = import.meta.env.VITE_FLASHDROP_ADDRESS as string | undefined;
 const PRODUCT_NAME = import.meta.env.VITE_PRODUCT_NAME || "Free Fall";
 const PRODUCT_DESCRIPTION =
   import.meta.env.VITE_PRODUCT_DESCRIPTION || "The price is in free fall. First confirmed buyer wins it.";
@@ -15,9 +16,9 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function AuctionView({ contractAddress }: { contractAddress: Address }) {
+function AuctionView({ contractAddress, chain }: { contractAddress: Address; chain: (typeof NETWORKS)[number]["chain"] }) {
   const { account, connect, sale, displayedPrice, auctionEnded, sold, buyer, soldPrice, status, error, buyNow } =
-    useFlashDrop(contractAddress);
+    useFlashDrop(contractAddress, chain);
 
   const progress =
     sale && displayedPrice !== null && sale.startPrice !== sale.endPrice
@@ -38,11 +39,7 @@ function AuctionView({ contractAddress }: { contractAddress: Address }) {
   };
 
   return (
-    <div className="drop-card">
-      <p className="eyebrow">Arc Flash Drop</p>
-      <h1>{PRODUCT_NAME}</h1>
-      <p className="description">{PRODUCT_DESCRIPTION}</p>
-
+    <>
       {sold ? (
         <div className="sold-panel">
           <p className="sold-banner">SOLD</p>
@@ -90,27 +87,48 @@ function AuctionView({ contractAddress }: { contractAddress: Address }) {
           </p>
         </>
       )}
-    </div>
+    </>
   );
 }
 
 function App() {
-  if (!CONTRACT_ADDRESS || !isAddress(CONTRACT_ADDRESS)) {
-    return (
-      <div className="drop-card">
-        <p className="eyebrow">Arc Flash Drop</p>
-        <h1>Not configured</h1>
-        <p className="description">
-          Set <code>VITE_FLASHDROP_ADDRESS</code> to a deployed FlashDrop contract address (see
-          <code>.env.example</code>) and restart the dev server.
-        </p>
-      </div>
-    );
-  }
+  const [networkIndex, setNetworkIndex] = useState(DEFAULT_NETWORK_INDEX);
+  const network = NETWORKS[networkIndex];
+  const contractAddress = import.meta.env[network.addressEnvVar] as string | undefined;
+
+  const networkPicker = (
+    <select
+      className="network-select"
+      value={networkIndex}
+      onChange={(e) => setNetworkIndex(Number(e.target.value))}
+    >
+      {NETWORKS.map((n, i) => (
+        <option key={n.chain.id} value={i}>
+          {n.label}
+        </option>
+      ))}
+    </select>
+  );
 
   return (
     <main className="page">
-      <AuctionView contractAddress={CONTRACT_ADDRESS} />
+      <div className="drop-card">
+        <div className="card-header">
+          <p className="eyebrow">Arc Flash Drop</p>
+          {networkPicker}
+        </div>
+        <h1>{PRODUCT_NAME}</h1>
+        <p className="description">{PRODUCT_DESCRIPTION}</p>
+
+        {!contractAddress || !isAddress(contractAddress) ? (
+          <p className="description">
+            No contract configured for {network.label}. Set <code>{network.addressEnvVar}</code> in{" "}
+            <code>frontend/.env.local</code> (see <code>.env.example</code>) and restart the dev server.
+          </p>
+        ) : (
+          <AuctionView contractAddress={contractAddress} chain={network.chain} />
+        )}
+      </div>
     </main>
   );
 }

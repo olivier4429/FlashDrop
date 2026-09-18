@@ -20,13 +20,36 @@
   box-shadow: 0 20px 60px rgba(0, 0, 0, 0.5);
 }
 
+.card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 8px;
+}
+
 .eyebrow {
-  margin: 0 0 8px;
+  margin: 0;
   font-size: 13px;
   font-weight: 600;
   letter-spacing: 2px;
   text-transform: uppercase;
   color: #38e8b5;
+}
+
+.network-select {
+  font-size: 12px;
+  font-weight: 600;
+  color: #9aa1b4;
+  background: #14161f;
+  border: 1px solid #262a38;
+  border-radius: 8px;
+  padding: 5px 8px;
+  cursor: pointer;
+}
+
+.network-select:focus {
+  outline: 1px solid #38e8b5;
 }
 
 .drop-card h1 {
