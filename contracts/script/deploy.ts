@@ -1,8 +1,8 @@
 import { network } from "hardhat";
 
 // Sale parameters come from the environment so the same script deploys any single-product drop
-// without editing source. One contract instance = one product (see PROJECT_BRIEF.md) — selling a
-// second item means running this script again, not adding catalog logic to FlashDrop itself.
+// without editing source. Run this once per contract instance; for every item after the first
+// one, reuse the same deployed instance with script/startNewSale.ts instead of deploying again.
 function envUint(name: string): bigint {
   const value = process.env[name];
   if (value === undefined || value === "") {

@@ -21,7 +21,7 @@ Candidature au programme **Arc Microgrants** (Circle/Arc) : 500 USDC par projet,
 
 **Mécanisme** : une enchère inversée (reverse Dutch auction) sur **un seul produit à la fois**. Le prix affiché décroît en temps réel depuis un `startPrice` jusqu'à un `endPrice` sur une durée fixée. Le premier acheteur qui valide son achat au prix affiché à cet instant l'emporte — la vente se ferme immédiatement (`sold = true`), pas de gestion de catalogue ni de stock.
 
-**Simplification actée** : un contrat = un produit. Pour vendre un deuxième article, on redéploie une nouvelle instance. Pas de logique multi-produits dans le MVP.
+**Simplification actée** : une seule vente active à la fois. Pas de catalogue multi-produits concurrents dans le MVP. En revanche (décision du 18/09/2026, revenant sur le choix initial de redéployer à chaque objet), le même contrat est réutilisable d'une vente à l'autre : une fois la vente en cours conclue (`sold == true`), le vendeur (et lui seul) peut appeler `startNewSale(startPrice, endPrice, duration)` pour armer le prochain objet sur cette même instance, sans redéploiement. Voir `contracts/script/startNewSale.ts`.
 
 ### Pourquoi Arc est réellement nécessaire ici (pas cosmétique)
 
@@ -35,32 +35,13 @@ Le prix qui décroît est un **compte à rebours visuel en direct** — pas une 
 
 ## Le contrat
 
-```solidity
-contract FlashDrop {
-    IERC20 public constant USDC = IERC20(0x3600000000000000000000000000000000000000);
-    address public immutable seller;
-    uint256 public immutable startPrice;
-    uint256 public immutable endPrice;
-    uint256 public immutable startTime;
-    uint256 public immutable duration;
-    bool public sold;
-
-    function currentPrice() public view returns (uint256) {
-        if (block.timestamp >= startTime + duration) return endPrice;
-        uint256 elapsed = block.timestamp - startTime;
-        uint256 drop = (startPrice - endPrice) * elapsed / duration;
-        return startPrice - drop; // décroissance linéaire, simple à suivre visuellement
-    }
-
-    function buy() external {
-        require(!sold, "Already sold");
-        uint256 price = currentPrice();
-        sold = true; // verrouillé avant le transfert, contre la réentrance
-        USDC.transferFrom(msg.sender, seller, price);
-        emit Sold(msg.sender, price, block.timestamp);
-    }
-}
-```
+Esquissé initialement dans ce brief (version simplifiée sans Permit2, avec `transferFrom` direct
+et des champs `immutable`) ; l'implémentation réelle a depuis évolué — voir directement
+`contracts/src/FlashDrop.sol`, qui reste la source de vérité, pour éviter qu'une copie ici ne
+devienne obsolète à chaque évolution. Différences principales par rapport à l'esquisse d'origine :
+achat via signature Permit2 (pas de `transferFrom` direct dans `buy()`), et `startPrice`/`endPrice`/
+`startTime`/`duration` ne sont plus `immutable` depuis l'ajout de `startNewSale` (réutilisation du
+contrat entre plusieurs ventes, décision du 18/09/2026 — voir plus haut).
 
 **Note sur `block.timestamp`** : les notes Arc (fichier 02) préviennent que `block.timestamp` n'est pas strictement croissant et ne doit jamais servir à **ordonner** des événements/blocs. Ici on ne l'utilise pas pour ordonner — juste pour lire une horloge murale approximative afin de calculer une décroissance de prix lissée. Usage légitime, à bien distinguer du piège documenté.
 

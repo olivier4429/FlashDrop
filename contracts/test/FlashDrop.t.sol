@@ -143,7 +143,61 @@ contract FlashDropTest is Test {
         secondDrop.buy(replay, replaySig);
     }
 
+    // ---- startNewSale() ----
+
+    function test_startNewSale_revertsIfNotSeller() public {
+        _completeASale();
+        vm.expectRevert("Only seller");
+        drop.startNewSale(START_PRICE, END_PRICE, DURATION);
+    }
+
+    function test_startNewSale_revertsIfCurrentSaleStillActive() public {
+        vm.prank(seller);
+        vm.expectRevert("Current sale still active");
+        drop.startNewSale(START_PRICE, END_PRICE, DURATION);
+    }
+
+    function test_startNewSale_resetsStateForNextItem() public {
+        _completeASale();
+
+        uint256 newStartPrice = 50e6;
+        uint256 newEndPrice = 5e6;
+        uint256 newDuration = 500;
+
+        vm.prank(seller);
+        drop.startNewSale(newStartPrice, newEndPrice, newDuration);
+
+        assertFalse(drop.sold());
+        assertEq(drop.buyer(), address(0));
+        assertEq(drop.soldPrice(), 0);
+        assertEq(drop.startPrice(), newStartPrice);
+        assertEq(drop.endPrice(), newEndPrice);
+        assertEq(drop.duration(), newDuration);
+        assertEq(drop.currentPrice(), newStartPrice);
+
+        // The same contract instance can now be bought again, by a different buyer.
+        address secondBuyer = vm.addr(0xC0FFEE);
+        MockUSDC(USDC).mint(secondBuyer, newStartPrice);
+        vm.prank(secondBuyer);
+        MockUSDC(USDC).approve(PERMIT2, type(uint256).max);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(newStartPrice, 1, block.timestamp + 1 hours);
+        bytes memory signature = _signPermitFor(address(drop), 0xC0FFEE, permit);
+
+        vm.prank(secondBuyer);
+        drop.buy(permit, signature);
+
+        assertTrue(drop.sold());
+        assertEq(drop.buyer(), secondBuyer);
+    }
+
     // ---- helpers ----
+
+    function _completeASale() internal {
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        vm.prank(buyer);
+        drop.buy(permit, _signPermit(permit));
+    }
 
     function _fundAndApprove(address account, uint256 amount) internal {
         MockUSDC(USDC).mint(account, amount);

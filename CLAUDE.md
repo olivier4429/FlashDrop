@@ -48,8 +48,12 @@ easy to get wrong (see "Arc-specific gotchas" below).
   address/ABI is already documented in `PROJECT_BRIEF.md`. If not, fetch it
   from `explorer.arc.io` (Blockscout API:
   `explorer.arc.io/api/v2/smart-contracts/{address}`) rather than guessing.
-- Keep the MVP scope to a single product per contract instance, as decided.
-  Don't introduce catalog/multi-item logic unless explicitly asked.
+- Keep the MVP scope to a single *active* sale at a time — no concurrent
+  multi-item catalog logic unless explicitly asked. The same contract
+  instance can be reused sequentially across sales via `startNewSale`
+  (decided 2026-09-18, see PROJECT_BRIEF.md), so "one contract" no longer
+  means "one product for its whole lifetime" — it means one product live
+  at any given moment.
 
 ## Pedagogical intent — comment Arc-specific logic thoroughly
 
@@ -140,19 +144,28 @@ Contract (`cd contracts`):
 - `npm install` — install dependencies (first time only)
 - `npm run compile` — compile contracts (`hardhat compile`)
 - `npm test` — run the Solidity test suite (`hardhat test solidity`)
-- `START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/deploy.ts --network hardhatMainnet` — dry-run deploy against the local simulated network
-- Same command with `--network arcTestnet` / `--network arcMainnet` for a
-  real deploy (needs `.env` filled in from `.env.example`, and a wallet
-  funded with real USDC for mainnet — no faucet there)
+- Deploy a new instance (do this once per contract instance, not once per
+  item — see `startNewSale` below):
+  `START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/deploy.ts --network <hardhatMainnet|localNode|arcTestnet|arcMainnet>`
+  (`.env` filled in from `.env.example` needed for `arcTestnet`/`arcMainnet`;
+  a wallet funded with real USDC for mainnet — no faucet there; testnet
+  USDC from `faucet.circle.com`, select "Arc Testnet")
+- Reuse an already-deployed instance for the next item, once the current
+  sale has sold (seller-only):
+  `FLASHDROP_ADDRESS=<deployed> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/startNewSale.ts --network <same network as deploy>`
 
 Local end-to-end testing (contract + frontend together, no testnet funds needed):
 - `cd contracts && npx hardhat node` — persistent local JSON-RPC node on `http://127.0.0.1:8545`
-- In another shell: `cd contracts && START_PRICE=... END_PRICE=... DURATION_SECONDS=... npx hardhat run script/deploy.ts --network localNode`
+- In another shell: `cd contracts && npx hardhat run script/setupLocalMocks.ts --network localNode`
+  — places mock USDC/Permit2 at Arc's real addresses on this local node and mints test USDC (see
+  the script for `TEST_BUYER_ADDRESS`/`TEST_MINT_AMOUNT` overrides). Needed for the buy() flow to
+  work at all locally; the passive price countdown/read side works without it.
+- Then deploy as above with `--network localNode`
 - In `frontend/.env.local` (gitignored): `VITE_FLASHDROP_ADDRESS=<deployed address>` and `VITE_CHAIN_ID=31337`
-- Note: this local node has no real USDC/Permit2 deployed at Arc's addresses, so the buy() flow
-  needs mocks placed there first (`hardhat_setCode`) to test past "Connect wallet" — see the
-  mocks in `contracts/test/mocks/` for a working reference. The passive price countdown/read side
-  works immediately without any of that.
+- To test on Arc testnet instead with a real wallet (MetaMask etc.): deploy with `--network arcTestnet`,
+  then set `VITE_FLASHDROP_ADDRESS`, `VITE_CHAIN_ID=5042002` and `VITE_ARC_RPC_URL=https://rpc.testnet.arc.io`
+  in `frontend/.env.local`. No manual wallet network setup needed — connecting in the app prompts
+  the wallet to add/switch to Arc Testnet automatically (see `ensureArcChain` in `useFlashDrop.ts`).
 
 Frontend (`cd frontend`):
 - `npm install` — install dependencies (first time only)

@@ -6,8 +6,9 @@ import {ISignatureTransfer} from "./interfaces/IPermit2.sol";
 /// @title FlashDrop
 /// @notice Single-product reverse Dutch auction: the displayed price decays linearly from
 /// `startPrice` to `endPrice` over `duration` seconds, and the first `buy()` that lands wins the
-/// item at whatever price was current at that instant. One contract instance = one product; to
-/// sell a second item, deploy a new instance (no catalog/multi-item logic — see PROJECT_BRIEF.md).
+/// item at whatever price was current at that instant. One sale is active at a time — once it's
+/// sold, the seller can call `startNewSale` to reuse this same contract for the next item instead
+/// of redeploying (still no concurrent multi-item catalog — see PROJECT_BRIEF.md).
 contract FlashDrop {
     // USDC on Arc is both the ERC-20 interface (6 decimals, used here) and the native gas asset
     // (18 decimals, same underlying balance) — the two must never be mixed in a calculation. This
@@ -24,26 +25,49 @@ contract FlashDrop {
     // pulls only the current, lower, displayed price in one single on-chain transaction.
     ISignatureTransfer public constant PERMIT2 = ISignatureTransfer(0x000000000022D473030F116dDEE9F6B43aC78BA3);
 
+    // Fixed for the lifetime of this contract instance: every sale ever run through it, across
+    // every reset via startNewSale, always pays out to this same address.
     address public immutable seller;
-    uint256 public immutable startPrice; // USDC, 6 decimals (ERC-20 interface)
-    uint256 public immutable endPrice; // USDC, 6 decimals
-    uint256 public immutable startTime;
-    uint256 public immutable duration; // seconds
+
+    // Mutable (unlike the original single-use version of this contract) so startNewSale can
+    // reconfigure them for the next item — see startNewSale below.
+    uint256 public startPrice; // USDC, 6 decimals (ERC-20 interface)
+    uint256 public endPrice; // USDC, 6 decimals
+    uint256 public startTime;
+    uint256 public duration; // seconds
 
     bool public sold;
     address public buyer;
     uint256 public soldPrice;
 
     event Sold(address indexed buyer, uint256 price, uint256 timestamp);
+    event SaleStarted(uint256 startPrice, uint256 endPrice, uint256 startTime, uint256 duration);
 
     constructor(uint256 _startPrice, uint256 _endPrice, uint256 _duration) {
+        seller = msg.sender;
+        _startSale(_startPrice, _endPrice, _duration);
+    }
+
+    /// @notice Reuses this contract for a new item once the current one has sold, instead of
+    /// deploying a fresh instance per item. Only the original seller may call this, and only
+    /// between sales — an active, not-yet-sold sale can't be interrupted or replaced.
+    function startNewSale(uint256 _startPrice, uint256 _endPrice, uint256 _duration) external {
+        require(msg.sender == seller, "Only seller");
+        require(sold, "Current sale still active");
+        sold = false;
+        buyer = address(0);
+        soldPrice = 0;
+        _startSale(_startPrice, _endPrice, _duration);
+    }
+
+    function _startSale(uint256 _startPrice, uint256 _endPrice, uint256 _duration) internal {
         require(_startPrice > _endPrice, "startPrice must exceed endPrice");
         require(_duration > 0, "duration must be positive");
-        seller = msg.sender;
         startPrice = _startPrice;
         endPrice = _endPrice;
         startTime = block.timestamp;
         duration = _duration;
+        emit SaleStarted(_startPrice, _endPrice, block.timestamp, _duration);
     }
 
     /// @notice Current price, decaying linearly from startPrice to endPrice over `duration`.

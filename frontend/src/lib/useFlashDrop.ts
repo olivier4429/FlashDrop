@@ -66,40 +66,29 @@ export function useFlashDrop(contractAddress: Address) {
   const [status, setStatus] = useState<BuyStatus>("idle");
   const [error, setError] = useState<string | null>(null);
 
-  // Immutable sale parameters never change after deployment — fetch once.
+  // Polls the full sale state, including startPrice/endPrice/startTime/duration — these aren't
+  // truly immutable: the seller can reuse this same contract for a new item via startNewSale once
+  // the current one sells (see FlashDrop.sol), so the frontend has to keep re-reading them rather
+  // than fetching once and assuming they're fixed forever. The same short interval doubles as a
+  // live demonstration of Arc's speed: the UI flips to "sold" almost as fast as the winning
+  // transaction lands, with nothing left ambiguous about who won.
   useEffect(() => {
     let cancelled = false;
-    (async () => {
-      const [startPrice, endPrice, startTime, duration] = await Promise.all([
+    const refresh = async () => {
+      const [startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] = await Promise.all([
         publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startPrice" }),
         publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "endPrice" }),
         publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startTime" }),
         publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "duration" }),
-      ]);
-      if (!cancelled) setSale({ startPrice, endPrice, startTime, duration });
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [publicClient, contractAddress]);
-
-  // Polls the sale outcome. Arc finalizes deterministically in well under a second, so this short
-  // interval doubles as a live demonstration of that speed: the UI flips to "sold" almost as fast
-  // as the winning transaction lands, with nothing left ambiguous about who won.
-  useEffect(() => {
-    let cancelled = false;
-    const refresh = async () => {
-      const [isSold, currentBuyer, price] = await Promise.all([
         publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "sold" }),
         publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "buyer" }),
         publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" }),
       ]);
       if (cancelled) return;
+      setSale({ startPrice, endPrice, startTime, duration });
       setSold(isSold);
-      if (isSold) {
-        setBuyer(currentBuyer);
-        setSoldPrice(price);
-      }
+      setBuyer(isSold ? currentBuyer : null);
+      setSoldPrice(isSold ? price : null);
     };
     refresh();
     const interval = setInterval(refresh, 750);
