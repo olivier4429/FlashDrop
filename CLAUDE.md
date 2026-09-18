@@ -157,9 +157,11 @@ Contract (`cd contracts`):
 Local end-to-end testing (contract + frontend together, no testnet funds needed):
 - `cd contracts && npx hardhat node` — persistent local JSON-RPC node on `http://127.0.0.1:8545`
 - In another shell: `cd contracts && npx hardhat run script/setupLocalMocks.ts --network localNode`
-  — places mock USDC/Permit2 at Arc's real addresses on this local node and mints test USDC (see
-  the script for `TEST_BUYER_ADDRESS`/`TEST_MINT_AMOUNT` overrides). Needed for the buy() flow to
-  work at all locally; the passive price countdown/read side works without it.
+  — places mock USDC/Permit2 *and* Multicall3 at Arc's real addresses on this local node, and mints
+  test USDC (see the script for `TEST_BUYER_ADDRESS`/`TEST_MINT_AMOUNT` overrides). USDC/Permit2 are
+  needed for the buy() flow to work at all locally; Multicall3 is needed for the frontend's price
+  countdown to read anything at all locally, since it batches its reads through Multicall3 (see
+  below) and a vanilla Hardhat node doesn't have one pre-deployed.
 - Then deploy as above with `--network localNode`
 - In `frontend/.env.local` (gitignored): `VITE_FLASHDROP_ADDRESS=<deployed address>`, then pick
   "Local (Hardhat node)" from the app's network dropdown
@@ -179,3 +181,9 @@ Frontend (`cd frontend`):
   redeploy to a different network). `VITE_CHAIN_ID` picks which network is pre-selected on load
   (defaults to Testnet if unset, deliberately not Mainnet, to avoid landing on an unconfigured
   network — see `DEFAULT_NETWORK_INDEX` in `arcChain.ts`).
+- The price-countdown poll batches its 7 reads into a single Multicall3 call rather than 7 separate
+  `eth_call`s — found the hard way that Arc's public testnet RPC returns HTTP 429 (rate limited) to
+  a client firing 7 parallel requests every 750ms, which surfaced as a misleading "no contract
+  found" error even with a correct address/network. Each chain definition in `arcChain.ts` needs
+  its own `contracts.multicall3.address` for viem's `multicall()` to work — it is NOT a global
+  default. Arc's Multicall3 is at the standard canonical address on both mainnet and testnet.

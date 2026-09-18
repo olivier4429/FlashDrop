@@ -89,29 +89,47 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   // than fetching once and assuming they're fixed forever. The same short interval doubles as a
   // live demonstration of Arc's speed: the UI flips to "sold" almost as fast as the winning
   // transaction lands, with nothing left ambiguous about who won.
+  //
+  // Batched into a single `multicall` (Multicall3, deployed on Arc at the same canonical address
+  // viem defaults to — see docs/arc-notes/03-adresses-contrats.md) instead of 7 separate eth_call
+  // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with 7
+  // parallel requests every cycle, which surfaced as a misleading "no contract found" error even
+  // though the contract and address were both correct — one request per poll avoids that entirely.
   useEffect(() => {
     let cancelled = false;
+    let consecutiveFailures = 0;
     const refresh = async () => {
-      let startPrice: bigint, endPrice: bigint, startTime: bigint, duration: bigint;
-      let isSold: boolean, currentBuyer: Address, price: bigint;
-      try {
-        [startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] = await Promise.all([
-          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startPrice" }),
-          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "endPrice" }),
-          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "startTime" }),
-          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "duration" }),
-          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "sold" }),
-          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "buyer" }),
-          publicClient.readContract({ address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" }),
-        ]);
-      } catch {
-        if (!cancelled) {
-          setReadError(`No FlashDrop contract found at ${contractAddress} on ${chain.name}.`);
+      const results = await publicClient
+        .multicall({
+          contracts: [
+            { address: contractAddress, abi: flashDropAbi, functionName: "startPrice" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "endPrice" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "startTime" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "duration" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "sold" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "buyer" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" },
+          ],
+          allowFailure: false,
+        })
+        .catch(() => null);
+
+      if (cancelled) return;
+
+      if (results === null) {
+        consecutiveFailures += 1;
+        // Don't flip to an error on a single transient blip (e.g. a brief RPC hiccup) — only after
+        // a few polls in a row have failed, since a real "wrong address/network" case stays failed
+        // indefinitely anyway.
+        if (consecutiveFailures >= 3) {
+          setReadError(`Could not read a FlashDrop contract at ${contractAddress} on ${chain.name}.`);
           setSale(null);
         }
         return;
       }
-      if (cancelled) return;
+      consecutiveFailures = 0;
+
+      const [startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] = results;
       setReadError(null);
       setSale({ startPrice, endPrice, startTime, duration });
       setSold(isSold);

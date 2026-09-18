@@ -134,8 +134,8 @@ future one) is just a signature and a transaction.
 ## Testing locally without testnet funds
 
 You can exercise the whole flow — including a real wallet buy — against a local node, without
-needing Arc testnet USDC. The local node has no real USDC/Permit2 deployed at Arc's addresses, so
-a setup script places working mocks there first:
+needing Arc testnet USDC. The local node has no real USDC/Permit2/Multicall3 deployed at Arc's
+addresses, so a setup script places working mocks there first:
 
 ```
 # terminal 1

@@ -15,6 +15,13 @@ const ALLOWED_LOCAL_CHAIN_IDS = [31337];
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
+// Multicall3 — deployed on Arc mainnet/testnet at this canonical address (confirmed via
+// eth_getCode on 2026-09-18), and what the frontend batches its reads through (see
+// frontend/src/lib/arcChain.ts). A vanilla Hardhat node has no contract here by default, so local
+// testing needs it placed manually too, or the frontend's multicall() calls fail on this network
+// specifically while working fine against the real ones.
+const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
+
 // Hardhat/Anvil's well-known first default test account — only ever meaningful on an ephemeral
 // local chain, safe to hardcode. Override with TEST_BUYER_ADDRESS to mint to a different address
 // instead (e.g. a MetaMask account you're testing with).
@@ -50,11 +57,16 @@ const mockUsdcBytecode = JSON.parse(
 const mockPermit2Bytecode = JSON.parse(
   fs.readFileSync("artifacts/test/mocks/MockPermit2.sol/MockPermit2.json", "utf8"),
 ).deployedBytecode;
+const multicall3Bytecode = fs.readFileSync("script/vendor/Multicall3.deployedBytecode.txt", "utf8").trim();
 
 await publicClient.request({ method: "hardhat_setCode" as never, params: [USDC_ADDRESS, mockUsdcBytecode] as never });
 await publicClient.request({
   method: "hardhat_setCode" as never,
   params: [PERMIT2_ADDRESS, mockPermit2Bytecode] as never,
+});
+await publicClient.request({
+  method: "hardhat_setCode" as never,
+  params: [MULTICALL3_ADDRESS, multicall3Bytecode] as never,
 });
 
 const buyerAddress = (process.env.TEST_BUYER_ADDRESS || DEFAULT_TEST_BUYER) as `0x${string}`;
@@ -68,7 +80,12 @@ const mintTx = await funder.sendTransaction({
 await publicClient.waitForTransactionReceipt({ hash: mintTx });
 
 console.log("Local mocks ready on chain", chainId);
-console.log("Mock USDC + Permit2 placed at Arc's real addresses:", USDC_ADDRESS, PERMIT2_ADDRESS);
+console.log(
+  "Mock USDC + Permit2 + Multicall3 placed at Arc's real addresses:",
+  USDC_ADDRESS,
+  PERMIT2_ADDRESS,
+  MULTICALL3_ADDRESS,
+);
 console.log("Minted", mintAmount.toString(), "USDC (6dp) to", buyerAddress);
 console.log(
   "Next: import that address's private key into your wallet (Hardhat's default account #0 key if",

@@ -10,6 +10,15 @@ import { defineChain } from "viem";
 // See docs/arc-notes/02-modele-stablecoin-gas.md.
 const nativeCurrency = { name: "USDC", symbol: "USDC", decimals: 18 } as const;
 
+// Multicall3 batches many contract reads into a single eth_call — viem's `multicall()` action
+// needs the deployed address for whichever chain it's called on, via `chain.contracts.multicall3`
+// (it does NOT assume a global default). Deployed on Arc at this address, identical on mainnet and
+// testnet (confirmed via eth_getCode on 2026-09-18; see docs/arc-notes/03-adresses-contrats.md).
+// Using it (see useFlashDrop.ts's polling loop) isn't just an optimization here: Arc's public
+// testnet RPC rate-limits (HTTP 429) a client that polls with 7 separate parallel requests every
+// cycle, which surfaced as a confusing "no contract found" error — one batched request avoids it.
+const multicall3 = { address: "0xcA11bde05977b3631167028862bE2a173976CA11" } as const;
+
 export const arcMainnet = defineChain({
   id: 5042,
   name: "Arc",
@@ -20,6 +29,7 @@ export const arcMainnet = defineChain({
   blockExplorers: {
     default: { name: "Arc Explorer", url: "https://explorer.arc.io" },
   },
+  contracts: { multicall3 },
 });
 
 export const arcTestnet = defineChain({
@@ -33,12 +43,15 @@ export const arcTestnet = defineChain({
     default: { name: "Arc Testnet Explorer", url: "https://explorer.testnet.arc.io" },
   },
   testnet: true,
+  contracts: { multicall3 },
 });
 
 // A generic local Hardhat node (`npx hardhat node`, see contracts/hardhat.config.ts's
 // `localNode` network) — NOT Arc, just a plain EVM simulator for local development/testing
 // without needing testnet funds. Native currency is a placeholder ETH, since there's no real
-// USDC-as-gas model here.
+// USDC-as-gas model here. Multicall3 isn't part of a vanilla Hardhat node's genesis state, so
+// script/setupLocalMocks.ts places it at the same canonical address for local testing to work the
+// same way as the real networks above.
 export const localDev = defineChain({
   id: 31337,
   name: "Local Hardhat Node",
@@ -46,6 +59,7 @@ export const localDev = defineChain({
   rpcUrls: {
     default: { http: ["http://127.0.0.1:8545"] },
   },
+  contracts: { multicall3 },
 });
 
 // The networks selectable from the UI's network dropdown (see App.tsx). There's a single
