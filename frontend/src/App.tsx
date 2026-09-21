@@ -275,9 +275,17 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
         </div>
       ) : (
         <>
+          <div className="live-badge">
+            <span className="live-dot" />
+            Live auction — price dropping now
+          </div>
+
           <div className="price-display">
             <span className="currency">$</span>
             <span className="price">{displayedPrice !== null ? formatUsdc(displayedPrice) : "—"}</span>
+            <span className="price-falling-arrow" aria-hidden="true">
+              ▼
+            </span>
           </div>
 
           <div className="progress-track">
