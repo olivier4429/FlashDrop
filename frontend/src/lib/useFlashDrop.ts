@@ -22,6 +22,16 @@ export type BuyStatus =
   | "done"
   | "error";
 
+export type AdminStatus = "idle" | "starting" | "done" | "error";
+
+export interface NewSaleInput {
+  itemName: string;
+  itemDescription: string;
+  startPrice: bigint;
+  endPrice: bigint;
+  durationSeconds: bigint;
+}
+
 // Mirrors FlashDrop.currentPrice()'s linear decay so the UI can tick every animation frame
 // without hitting the RPC on every render. This is only a client-side visual approximation of
 // wall-clock time — the price actually charged is whatever the contract computes from
@@ -60,6 +70,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   const [account, setAccount] = useState<Address | null>(null);
   const walletClientRef = useRef<ArcWalletClient | null>(null);
 
+  const [seller, setSeller] = useState<Address | null>(null);
   const [sale, setSale] = useState<SaleParams | null>(null);
   const [sold, setSold] = useState(false);
   const [buyer, setBuyer] = useState<Address | null>(null);
@@ -67,6 +78,8 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   const [nowMs, setNowMs] = useState(() => Date.now());
   const [status, setStatus] = useState<BuyStatus>("idle");
   const [error, setError] = useState<string | null>(null);
+  const [adminStatus, setAdminStatus] = useState<AdminStatus>("idle");
+  const [adminError, setAdminError] = useState<string | null>(null);
   // Null while the very first read is still in flight; a message once a read has actually failed
   // (e.g. VITE_FLASHDROP_ADDRESS points at a network the wallet isn't currently reading, since the
   // app uses one address across all networks in the dropdown rather than one per network).
@@ -81,6 +94,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     walletClientRef.current = null;
     setAccount(null);
     setStatus("idle");
+    setSeller(null);
     setSale(null);
     setReadError(null);
   }, [chain, contractAddress]);
@@ -125,6 +139,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       const results = await publicClient
         .multicall({
           contracts: [
+            { address: contractAddress, abi: flashDropAbi, functionName: "seller" },
             { address: contractAddress, abi: flashDropAbi, functionName: "itemName" },
             { address: contractAddress, abi: flashDropAbi, functionName: "itemDescription" },
             { address: contractAddress, abi: flashDropAbi, functionName: "startPrice" },
@@ -148,6 +163,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
         // indefinitely anyway.
         if (consecutiveFailures >= 3) {
           setReadError(`Could not read a FlashDrop contract at ${contractAddress} on ${chain.name}.`);
+          setSeller(null);
           setSale(null);
         }
         scheduleNext(3000);
@@ -155,9 +171,10 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       }
       consecutiveFailures = 0;
 
-      const [itemName, itemDescription, startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] =
+      const [sellerAddress, itemName, itemDescription, startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] =
         results;
       setReadError(null);
+      setSeller(sellerAddress);
       setSale({ itemName, itemDescription, startPrice, endPrice, startTime, duration });
       setSold(isSold);
       setBuyer(isSold ? currentBuyer : null);
@@ -302,9 +319,43 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     }
   }, [account, sale, publicClient, contractAddress, chain]);
 
+  // Seller-only: arms the next item on this same contract instance once the current sale has
+  // sold. Unlike buy(), this is a plain write — no Permit2 signature involved, since it doesn't
+  // move any funds. The contract itself enforces `msg.sender == seller` and `sold == true` (see
+  // FlashDrop.sol), so this call will revert if either doesn't hold; this UI is only ever shown to
+  // the connected seller as a convenience, not as the actual access control.
+  const adminStartNewSale = useCallback(
+    async (input: NewSaleInput) => {
+      const wallet = walletClientRef.current;
+      if (!wallet || !account) return;
+      setAdminError(null);
+      setAdminStatus("starting");
+      try {
+        const hash = await wallet.writeContract({
+          account,
+          address: contractAddress,
+          abi: flashDropAbi,
+          functionName: "startNewSale",
+          args: [input.itemName, input.itemDescription, input.startPrice, input.endPrice, input.durationSeconds],
+          chain,
+        });
+        await publicClient.waitForTransactionReceipt({ hash });
+        setAdminStatus("done");
+      } catch (err) {
+        setAdminError(err instanceof Error ? err.message : String(err));
+        setAdminStatus("error");
+      }
+    },
+    [account, publicClient, contractAddress, chain],
+  );
+
   return {
     account,
     connect,
+    seller,
+    adminStartNewSale,
+    adminStatus,
+    adminError,
     sale,
     displayedPrice,
     auctionEnded,

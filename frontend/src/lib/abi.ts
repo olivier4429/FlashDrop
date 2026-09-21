@@ -39,6 +39,19 @@ export const flashDropAbi = [
     outputs: [],
   },
   {
+    type: "function",
+    name: "startNewSale",
+    stateMutability: "nonpayable",
+    inputs: [
+      { name: "_itemName", type: "string" },
+      { name: "_itemDescription", type: "string" },
+      { name: "_startPrice", type: "uint256" },
+      { name: "_endPrice", type: "uint256" },
+      { name: "_duration", type: "uint256" },
+    ],
+    outputs: [],
+  },
+  {
     type: "event",
     name: "Sold",
     inputs: [

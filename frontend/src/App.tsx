@@ -1,5 +1,5 @@
-import { useState } from "react";
-import { formatUnits, isAddress, type Address } from "viem";
+import { useState, type FormEvent } from "react";
+import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import { DEFAULT_NETWORK_INDEX, NETWORKS } from "./lib/arcChain";
 import { useFlashDrop } from "./lib/useFlashDrop";
 import "./App.css";
@@ -19,9 +19,120 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
+// Seller-only: arms the next item on this same contract instance. Only ever rendered when the
+// connected wallet matches seller() (see AuctionView below) — that check is a UI convenience, not
+// the real access control, which is enforced on-chain by startNewSale's `msg.sender == seller`
+// require (see FlashDrop.sol). Anyone forging this form client-side would just get a revert.
+function AdminPanel({
+  sold,
+  onStartNewSale,
+  adminStatus,
+  adminError,
+}: {
+  sold: boolean;
+  onStartNewSale: (input: { itemName: string; itemDescription: string; startPrice: bigint; endPrice: bigint; durationSeconds: bigint }) => void;
+  adminStatus: "idle" | "starting" | "done" | "error";
+  adminError: string | null;
+}) {
+  const [itemName, setItemName] = useState("");
+  const [itemDescription, setItemDescription] = useState("");
+  const [startPrice, setStartPrice] = useState("");
+  const [endPrice, setEndPrice] = useState("");
+  const [durationSeconds, setDurationSeconds] = useState("");
+
+  const parsedStart = Number(startPrice);
+  const parsedEnd = Number(endPrice);
+  const parsedDuration = Number(durationSeconds);
+  const formValid =
+    itemName.trim() !== "" &&
+    Number.isFinite(parsedStart) &&
+    Number.isFinite(parsedEnd) &&
+    parsedStart > parsedEnd &&
+    parsedEnd >= 0 &&
+    Number.isInteger(parsedDuration) &&
+    parsedDuration > 0;
+
+  const submitting = adminStatus === "starting";
+
+  const handleSubmit = (e: FormEvent) => {
+    e.preventDefault();
+    if (!formValid || !sold || submitting) return;
+    onStartNewSale({
+      itemName: itemName.trim(),
+      itemDescription: itemDescription.trim(),
+      // USDC on Arc uses 6 decimals at the ERC-20 interface FlashDrop reads (see FlashDrop.sol's
+      // USDC comment) — parseUnits(_, 6) converts the dollar amount typed here into that integer.
+      startPrice: parseUnits(startPrice, 6),
+      endPrice: parseUnits(endPrice, 6),
+      durationSeconds: BigInt(parsedDuration),
+    });
+  };
+
+  return (
+    <details className="admin-panel">
+      <summary>Seller admin</summary>
+      <form className="admin-form" onSubmit={handleSubmit}>
+        {!sold && (
+          <p className="admin-hint">
+            The current sale is still active — startNewSale can only run once it's sold.
+          </p>
+        )}
+        <label>
+          Item name
+          <input type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="Vintage Leather Jacket" />
+        </label>
+        <label>
+          Item description
+          <textarea
+            value={itemDescription}
+            onChange={(e) => setItemDescription(e.target.value)}
+            placeholder="Size M, one owner, no visible wear."
+            rows={2}
+          />
+        </label>
+        <div className="admin-form-row">
+          <label>
+            Start price (USD)
+            <input type="number" min="0" step="0.01" value={startPrice} onChange={(e) => setStartPrice(e.target.value)} placeholder="100" />
+          </label>
+          <label>
+            End price (USD)
+            <input type="number" min="0" step="0.01" value={endPrice} onChange={(e) => setEndPrice(e.target.value)} placeholder="10" />
+          </label>
+        </div>
+        <label>
+          Duration (seconds)
+          <input type="number" min="1" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} placeholder="300" />
+        </label>
+        <button className="admin-submit" type="submit" disabled={!formValid || !sold || submitting}>
+          {submitting ? "Starting sale…" : "Start new sale"}
+        </button>
+        {adminStatus === "done" && <p className="admin-success">New sale started.</p>}
+        {adminError && <p className="error-message">{adminError}</p>}
+      </form>
+    </details>
+  );
+}
+
 function AuctionView({ contractAddress, chain }: { contractAddress: Address; chain: (typeof NETWORKS)[number]["chain"] }) {
-  const { account, connect, sale, displayedPrice, auctionEnded, sold, buyer, soldPrice, status, error, buyNow, readError } =
-    useFlashDrop(contractAddress, chain);
+  const {
+    account,
+    connect,
+    seller,
+    adminStartNewSale,
+    adminStatus,
+    adminError,
+    sale,
+    displayedPrice,
+    auctionEnded,
+    sold,
+    buyer,
+    soldPrice,
+    status,
+    error,
+    buyNow,
+    readError,
+  } = useFlashDrop(contractAddress, chain);
 
   if (readError) {
     return (
@@ -101,6 +212,10 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
             finalizes.
           </p>
         </>
+      )}
+
+      {account && seller && account.toLowerCase() === seller.toLowerCase() && (
+        <AdminPanel sold={sold} onStartNewSale={adminStartNewSale} adminStatus={adminStatus} adminError={adminError} />
       )}
     </>
   );
