@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Address, type Chain, createPublicClient, http } from "viem";
 
 export interface PastSale {
@@ -76,50 +76,86 @@ const POLL_INTERVAL_MS = 15_000;
 // `Sold` event only carries buyer/price/timestamp, not which item was sold, so this pairs it with
 // whichever `SaleStarted` most recently preceded it (there's always exactly one, since a new sale
 // can only start once the previous one sold) to recover the item's name/description too.
+function sortLogs(logs: HistoryLog[]): HistoryLog[] {
+  // Oldest-first so "current item" can be tracked forward in time as SaleStarted events update
+  // it, then each Sold event records a completed sale against whatever item was live for it.
+  return [...logs].sort((a, b) => {
+    if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
+    return a.logIndex - b.logIndex;
+  });
+}
+
 export function useSaleHistory(contractAddress: Address, chain: Chain) {
   const publicClient = useMemo(() => createPublicClient({ chain, transport: http() }), [chain]);
   const [history, setHistory] = useState<PastSale[] | null>(null);
   const [loading, setLoading] = useState(false);
+
+  // Remembers how far the backward scan has already reached and which item was live at that
+  // point, so every 15s tick after the first one only has to ask for logs newer than what's
+  // already known (almost always zero or one page) instead of re-running the full paginated scan
+  // from `latest` every time. Doing the expensive multi-page backward walk on every poll is what
+  // was triggering RPC rate limits (HTTP 429) on Arc's public RPC — see CLAUDE.md's note on
+  // needing to batch/limit request volume against it.
+  const lastScannedBlockRef = useRef<bigint | null>(null);
+  const currentItemRef = useRef<{ itemName: string; itemDescription: string } | null>(null);
+
+  // Resets the "already scanned" bookkeeping whenever the contract/chain changes, so switching
+  // networks or contracts triggers a fresh full backward scan instead of reusing state built for
+  // a different chain.
+  useEffect(() => {
+    lastScannedBlockRef.current = null;
+    currentItemRef.current = null;
+    setHistory(null);
+  }, [contractAddress, chain]);
 
   const refresh = useCallback(async () => {
     setLoading(true);
     try {
       const latestBlock = await publicClient.getBlockNumber();
       const logs: HistoryLog[] = [];
-      let soldCount = 0;
-      let toBlock = latestBlock;
 
-      for (let page = 0; page < MAX_PAGES && toBlock >= 0n; page++) {
-        const fromBlock = toBlock > PAGE_SIZE_BLOCKS ? toBlock - PAGE_SIZE_BLOCKS + 1n : 0n;
+      if (lastScannedBlockRef.current === null) {
+        // First run for this contract/chain: walk backward in bounded pages until HISTORY_LIMIT
+        // completed sales are found (or genesis is reached). This is the only place that can cost
+        // more than one eth_getLogs call, and it only happens once.
+        let soldCount = 0;
+        let toBlock = latestBlock;
+        for (let page = 0; page < MAX_PAGES && toBlock >= 0n; page++) {
+          const fromBlock = toBlock > PAGE_SIZE_BLOCKS ? toBlock - PAGE_SIZE_BLOCKS + 1n : 0n;
+          const pageLogs = (await publicClient.getLogs({
+            address: contractAddress,
+            events: [saleStartedEvent, soldEvent],
+            fromBlock,
+            toBlock,
+          })) as unknown as HistoryLog[];
+          logs.push(...pageLogs);
+          soldCount += pageLogs.filter((log) => log.eventName === "Sold").length;
+
+          if (soldCount >= HISTORY_LIMIT || fromBlock === 0n) break;
+          toBlock = fromBlock - 1n;
+        }
+      } else if (latestBlock > lastScannedBlockRef.current) {
+        // Steady state: only ask for what's new since the last successful scan — a single call
+        // covering a handful of blocks at most, the same order of magnitude as the price poll's
+        // own reads.
         const pageLogs = (await publicClient.getLogs({
           address: contractAddress,
           events: [saleStartedEvent, soldEvent],
-          fromBlock,
-          toBlock,
+          fromBlock: lastScannedBlockRef.current + 1n,
+          toBlock: latestBlock,
         })) as unknown as HistoryLog[];
         logs.push(...pageLogs);
-        soldCount += pageLogs.filter((log) => log.eventName === "Sold").length;
-
-        if (soldCount >= HISTORY_LIMIT || fromBlock === 0n) break;
-        toBlock = fromBlock - 1n;
       }
 
-      // Oldest-first so "current item" can be tracked forward in time as SaleStarted events update
-      // it, then each Sold event records a completed sale against whatever item was live for it.
-      logs.sort((a, b) => {
-        if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
-        return a.logIndex - b.logIndex;
-      });
-
-      let currentItem: { itemName: string; itemDescription: string } | null = null;
-      const sales: PastSale[] = [];
-      for (const log of logs) {
+      const sortedLogs = sortLogs(logs);
+      const newSales: PastSale[] = [];
+      for (const log of sortedLogs) {
         if (log.eventName === "SaleStarted") {
-          currentItem = { itemName: log.args.itemName, itemDescription: log.args.itemDescription };
+          currentItemRef.current = { itemName: log.args.itemName, itemDescription: log.args.itemDescription };
         } else if (log.eventName === "Sold") {
-          sales.push({
-            itemName: currentItem?.itemName || "(unknown item)",
-            itemDescription: currentItem?.itemDescription || "",
+          newSales.push({
+            itemName: currentItemRef.current?.itemName || "(unknown item)",
+            itemDescription: currentItemRef.current?.itemDescription || "",
             price: log.args.price,
             buyer: log.args.buyer,
             timestamp: log.args.timestamp,
@@ -128,14 +164,23 @@ export function useSaleHistory(contractAddress: Address, chain: Chain) {
         }
       }
 
-      setHistory(sales.slice(-HISTORY_LIMIT).reverse());
+      lastScannedBlockRef.current = latestBlock;
+      if (newSales.length > 0) {
+        setHistory((prev) => [...newSales.reverse(), ...(prev ?? [])].slice(0, HISTORY_LIMIT));
+      } else if (history === null) {
+        // Nothing found on the very first scan — set [] (not null) so the panel can render "No
+        // past sales yet." instead of staying in the loading state forever.
+        setHistory([]);
+      }
     } catch {
       // Best-effort only — the main sale display doesn't depend on history, so a failed scan (a
-      // flaky RPC, a rate limit) just leaves the panel empty rather than surfacing an error.
-      setHistory(null);
+      // flaky RPC, a rate limit) just leaves whatever was already loaded rather than clearing it.
     } finally {
       setLoading(false);
     }
+    // `history` is read but intentionally left out of deps — it's only consulted to tell "first
+    // load, nothing found" apart from "steady state, nothing new", not to react to its own changes.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicClient, contractAddress]);
 
   useEffect(() => {
