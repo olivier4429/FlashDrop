@@ -69,7 +69,7 @@ const MAX_PAGES = 20; // stop looking back after ~100k blocks even if HISTORY_LI
 // price poll uses. This hook is self-contained (polls on its own timer) rather than being driven
 // by the current sale's `sold` flag from useFlashDrop, so it doesn't need that state lifted out of
 // AuctionView into a shared parent just to wire the two together.
-const POLL_INTERVAL_MS = 15_000;
+const POLL_INTERVAL_MS = 30_000;
 
 // Reconstructs the last few completed sales from FlashDrop's event log, since the contract itself
 // only ever stores the CURRENT sale's state (see FlashDrop.sol) — nothing about past ones. Each
@@ -91,13 +91,19 @@ export function useSaleHistory(contractAddress: Address, chain: Chain) {
   const [loading, setLoading] = useState(false);
 
   // Remembers how far the backward scan has already reached and which item was live at that
-  // point, so every 15s tick after the first one only has to ask for logs newer than what's
+  // point, so every poll tick after the first one only has to ask for logs newer than what's
   // already known (almost always zero or one page) instead of re-running the full paginated scan
   // from `latest` every time. Doing the expensive multi-page backward walk on every poll is what
   // was triggering RPC rate limits (HTTP 429) on Arc's public RPC — see CLAUDE.md's note on
   // needing to batch/limit request volume against it.
   const lastScannedBlockRef = useRef<bigint | null>(null);
   const currentItemRef = useRef<{ itemName: string; itemDescription: string } | null>(null);
+  // Guards against two overlapping scans running at once — most notably React StrictMode's
+  // dev-only double-invocation of effects on mount, which otherwise fires two independent
+  // `tick()` calls before either's cleanup can run, so two full multi-page backward scans would
+  // start concurrently and double the initial eth_getLogs burst (caught live: 9 calls instead of
+  // the ~5 a single scan needs, on a chain where 5 pages were needed to reach genesis).
+  const isRefreshingRef = useRef(false);
 
   // Resets the "already scanned" bookkeeping whenever the contract/chain changes, so switching
   // networks or contracts triggers a fresh full backward scan instead of reusing state built for
@@ -109,42 +115,93 @@ export function useSaleHistory(contractAddress: Address, chain: Chain) {
   }, [contractAddress, chain]);
 
   const refresh = useCallback(async () => {
+    if (isRefreshingRef.current) return;
+    isRefreshingRef.current = true;
     setLoading(true);
     try {
-      const latestBlock = await publicClient.getBlockNumber();
-      const logs: HistoryLog[] = [];
+      await refreshOnce();
+    } finally {
+      isRefreshingRef.current = false;
+      setLoading(false);
+    }
 
-      if (lastScannedBlockRef.current === null) {
+    async function refreshOnce() {
+      let latestBlock: bigint;
+      try {
+        latestBlock = await publicClient.getBlockNumber();
+      } catch {
+        // Couldn't even get the chain tip — try again next tick, nothing to record.
+        return;
+      }
+
+      const logs: HistoryLog[] = [];
+      // Captured before the scan below can change `lastScannedBlockRef` — used only to tell "first
+      // scan ever for this contract" apart from "steady state" when deciding whether to initialize
+      // `history` to `[]` further down. Deliberately NOT read from the `history` state itself: this
+      // function is a plain closure (not a useCallback with `history` in its deps, to avoid
+      // recreating it — and re-triggering the polling effect — on every history update), so `history`
+      // here would otherwise be a stale snapshot from whenever `refresh` was first created, wrongly
+      // re-triggering "nothing found yet" on every later empty tick and wiping out real results.
+      const isFirstScan = lastScannedBlockRef.current === null;
+      // Whether we can safely advance `lastScannedBlockRef` to `latestBlock` once we're done. Only
+      // false if the incremental (steady-state) call itself fails — in that case we deliberately
+      // leave the cursor where it was so the next tick retries the same small range. The initial
+      // backward scan is different: it's allowed to advance the cursor even on partial failure (see
+      // below), specifically to avoid retrying the whole expensive multi-page walk forever.
+      let canAdvanceCursor = true;
+
+      if (isFirstScan) {
         // First run for this contract/chain: walk backward in bounded pages until HISTORY_LIMIT
-        // completed sales are found (or genesis is reached). This is the only place that can cost
-        // more than one eth_getLogs call, and it only happens once.
+        // completed sales are found (or genesis is reached). Each page is caught individually —
+        // if Arc's public RPC rate-limits (HTTP 429) partway through, we keep whatever pages
+        // already succeeded and stop, rather than throwing the whole scan away. Critically, the
+        // cursor still advances to `latestBlock` below even then: everything from `latestBlock`
+        // down to wherever we stopped WAS successfully covered, so steady-state polling from here
+        // is still gap-free — just with less historical depth than ideal. Without this, a scan that
+        // fails on (say) page 3 of 20 would retry all 20 pages again on the very next poll tick,
+        // fail again around the same point, and repeat forever — which is exactly what was still
+        // tripping the rate limiter after the first fix (that one only optimized the steady state,
+        // not a failing initial scan).
         let soldCount = 0;
         let toBlock = latestBlock;
         for (let page = 0; page < MAX_PAGES && toBlock >= 0n; page++) {
           const fromBlock = toBlock > PAGE_SIZE_BLOCKS ? toBlock - PAGE_SIZE_BLOCKS + 1n : 0n;
+          try {
+            const pageLogs = (await publicClient.getLogs({
+              address: contractAddress,
+              events: [saleStartedEvent, soldEvent],
+              fromBlock,
+              toBlock,
+            })) as unknown as HistoryLog[];
+            logs.push(...pageLogs);
+            soldCount += pageLogs.filter((log) => log.eventName === "Sold").length;
+          } catch {
+            break; // keep whatever pages already succeeded; stop paginating for this run
+          }
+
+          if (soldCount >= HISTORY_LIMIT || fromBlock === 0n) break;
+          toBlock = fromBlock - 1n;
+          // Small pacing gap between pages — spreads the burst out instead of firing ~20 requests
+          // back-to-back, which is itself plausibly enough to trip a strict public RPC rate limit.
+          if (page < MAX_PAGES - 1) await new Promise((r) => setTimeout(r, 200));
+        }
+      } else if (lastScannedBlockRef.current !== null && latestBlock > lastScannedBlockRef.current) {
+        // Steady state: only ask for what's new since the last successful scan — a single call
+        // covering a handful of blocks at most, the same order of magnitude as the price poll's
+        // own reads. Captured into a local so TS can carry the non-null narrowing through the
+        // `await` below (it won't for a mutable `ref.current` member access on its own).
+        const fromBlock = lastScannedBlockRef.current + 1n;
+        try {
           const pageLogs = (await publicClient.getLogs({
             address: contractAddress,
             events: [saleStartedEvent, soldEvent],
             fromBlock,
-            toBlock,
+            toBlock: latestBlock,
           })) as unknown as HistoryLog[];
           logs.push(...pageLogs);
-          soldCount += pageLogs.filter((log) => log.eventName === "Sold").length;
-
-          if (soldCount >= HISTORY_LIMIT || fromBlock === 0n) break;
-          toBlock = fromBlock - 1n;
+        } catch {
+          canAdvanceCursor = false; // cheap to just retry this same small range next tick
         }
-      } else if (latestBlock > lastScannedBlockRef.current) {
-        // Steady state: only ask for what's new since the last successful scan — a single call
-        // covering a handful of blocks at most, the same order of magnitude as the price poll's
-        // own reads.
-        const pageLogs = (await publicClient.getLogs({
-          address: contractAddress,
-          events: [saleStartedEvent, soldEvent],
-          fromBlock: lastScannedBlockRef.current + 1n,
-          toBlock: latestBlock,
-        })) as unknown as HistoryLog[];
-        logs.push(...pageLogs);
       }
 
       const sortedLogs = sortLogs(logs);
@@ -164,23 +221,15 @@ export function useSaleHistory(contractAddress: Address, chain: Chain) {
         }
       }
 
-      lastScannedBlockRef.current = latestBlock;
+      if (canAdvanceCursor) lastScannedBlockRef.current = latestBlock;
       if (newSales.length > 0) {
         setHistory((prev) => [...newSales.reverse(), ...(prev ?? [])].slice(0, HISTORY_LIMIT));
-      } else if (history === null) {
+      } else if (isFirstScan && canAdvanceCursor) {
         // Nothing found on the very first scan — set [] (not null) so the panel can render "No
         // past sales yet." instead of staying in the loading state forever.
         setHistory([]);
       }
-    } catch {
-      // Best-effort only — the main sale display doesn't depend on history, so a failed scan (a
-      // flaky RPC, a rate limit) just leaves whatever was already loaded rather than clearing it.
-    } finally {
-      setLoading(false);
     }
-    // `history` is read but intentionally left out of deps — it's only consulted to tell "first
-    // load, nothing found" apart from "steady state, nothing new", not to react to its own changes.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [publicClient, contractAddress]);
 
   useEffect(() => {
