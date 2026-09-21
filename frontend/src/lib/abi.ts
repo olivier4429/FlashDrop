@@ -60,6 +60,18 @@ export const flashDropAbi = [
       { name: "timestamp", type: "uint256", indexed: false },
     ],
   },
+  {
+    type: "event",
+    name: "SaleStarted",
+    inputs: [
+      { name: "itemName", type: "string", indexed: false },
+      { name: "itemDescription", type: "string", indexed: false },
+      { name: "startPrice", type: "uint256", indexed: false },
+      { name: "endPrice", type: "uint256", indexed: false },
+      { name: "startTime", type: "uint256", indexed: false },
+      { name: "duration", type: "uint256", indexed: false },
+    ],
+  },
 ] as const;
 
 // Minimal ERC-20 surface needed for the one-time Permit2 allowance setup (see useFlashDrop.ts).

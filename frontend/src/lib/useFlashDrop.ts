@@ -69,6 +69,12 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
 
   const [account, setAccount] = useState<Address | null>(null);
   const walletClientRef = useRef<ArcWalletClient | null>(null);
+  // Tracks `sold` across polls (independent of React state staleness inside the poll's closure —
+  // see below) so a true->false transition (a new sale just got armed via startNewSale) can be
+  // told apart from "still unsold". Used only to reset the connected wallet's own buy status: this
+  // is what stops the buy button reading "Purchased!" for a new item after the same wallet bought
+  // a previous one in this session — see the reset below.
+  const prevSoldRef = useRef<boolean | null>(null);
 
   const [seller, setSeller] = useState<Address | null>(null);
   const [sale, setSale] = useState<SaleParams | null>(null);
@@ -97,6 +103,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setSeller(null);
     setSale(null);
     setReadError(null);
+    prevSoldRef.current = null;
   }, [chain, contractAddress]);
 
   // Polls the full sale state, including itemName/itemDescription/startPrice/endPrice/startTime/
@@ -179,6 +186,14 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       setSold(isSold);
       setBuyer(isSold ? currentBuyer : null);
       setSoldPrice(isSold ? price : null);
+      // A new sale was just armed (startNewSale flips this true->false). Reset this wallet's own
+      // buy status so its button reads "Buy now" for the new item instead of a stale "Purchased!"
+      // left over from buying a previous item in the same connected session.
+      if (prevSoldRef.current === true && isSold === false) {
+        setStatus("idle");
+        setError(null);
+      }
+      prevSoldRef.current = isSold;
       scheduleNext(isSold ? 3000 : 750);
     };
 
