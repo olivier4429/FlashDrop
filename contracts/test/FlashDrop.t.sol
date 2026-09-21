@@ -145,6 +145,62 @@ contract FlashDropTest is Test {
         secondDrop.buy(replay, replaySig);
     }
 
+    // ---- cancelSale() ----
+
+    function test_cancelSale_revertsIfNotSeller() public {
+        vm.expectRevert("Only seller");
+        drop.cancelSale();
+    }
+
+    function test_cancelSale_revertsIfAlreadySold() public {
+        _completeASale();
+        vm.prank(seller);
+        vm.expectRevert("Already sold");
+        drop.cancelSale();
+    }
+
+    function test_cancelSale_revertsIfAlreadyCancelled() public {
+        vm.prank(seller);
+        drop.cancelSale();
+
+        vm.prank(seller);
+        vm.expectRevert("Already cancelled");
+        drop.cancelSale();
+    }
+
+    function test_cancelSale_setsCancelledAndBlocksBuy() public {
+        vm.prank(seller);
+        drop.cancelSale();
+
+        assertTrue(drop.cancelled());
+        assertFalse(drop.sold());
+
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        vm.prank(buyer);
+        vm.expectRevert("Sale was cancelled");
+        drop.buy(permit, _signPermit(permit));
+    }
+
+    function test_cancelSale_letsSellerStartNewSaleWithoutASale() public {
+        vm.prank(seller);
+        drop.cancelSale();
+
+        string memory newItemName = "Replacement Item";
+        vm.prank(seller);
+        drop.startNewSale(newItemName, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+
+        assertFalse(drop.cancelled());
+        assertEq(drop.itemName(), newItemName);
+
+        // The replaced sale is buyable normally.
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        vm.prank(buyer);
+        drop.buy(permit, _signPermit(permit));
+        assertTrue(drop.sold());
+    }
+
     // ---- startNewSale() ----
 
     function test_startNewSale_revertsIfNotSeller() public {

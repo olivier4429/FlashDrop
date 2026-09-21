@@ -151,6 +151,35 @@ body {
   line-height: 1.5;
 }
 
+.wallet-status {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  margin-bottom: 20px;
+  font-size: 12px;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  color: #5b6178;
+}
+
+.disconnect-link {
+  font: inherit;
+  color: #8b93a7;
+  background: none;
+  border: none;
+  padding: 0;
+  text-decoration: underline;
+  cursor: pointer;
+}
+
+.disconnect-link:hover {
+  color: #12141c;
+}
+
+.wallet-connect-button {
+  margin-bottom: 20px;
+}
+
 .price-display {
   display: flex;
   align-items: baseline;
@@ -273,6 +302,24 @@ body {
   line-height: 1.5;
 }
 
+.cancelled-panel {
+  padding: 24px 0 8px;
+}
+
+.cancelled-banner {
+  font-size: 40px;
+  font-weight: 800;
+  letter-spacing: 4px;
+  color: #8b93a7;
+  margin: 0 0 12px;
+}
+
+.cancelled-note {
+  font-size: 13px;
+  color: #5b6178;
+  line-height: 1.5;
+}
+
 .admin-panel {
   margin-top: 28px;
   padding-top: 20px;
@@ -289,11 +336,43 @@ body {
   color: #5b6178;
 }
 
+.admin-body {
+  margin-top: 16px;
+}
+
+.admin-cancel-block {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+  padding-bottom: 16px;
+  margin-bottom: 16px;
+  border-bottom: 1px dashed #dbe0ea;
+}
+
+.admin-cancel-button {
+  padding: 10px;
+  font-size: 13px;
+  font-weight: 700;
+  color: #b03a3a;
+  background: #fdf2f2;
+  border: 1px solid #f0c8c8;
+  border-radius: 10px;
+  cursor: pointer;
+}
+
+.admin-cancel-button:hover:not(:disabled) {
+  background: #fbe6e6;
+}
+
+.admin-cancel-button:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+
 .admin-form {
   display: flex;
   flex-direction: column;
   gap: 12px;
-  margin-top: 16px;
 }
 
 .admin-form label {

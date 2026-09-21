@@ -60,14 +60,20 @@ function HistoryPanel({ contractAddress, chain }: { contractAddress: Address; ch
 // require (see FlashDrop.sol). Anyone forging this form client-side would just get a revert.
 function AdminPanel({
   sold,
+  cancelled,
   onStartNewSale,
+  onCancelSale,
   adminStatus,
   adminError,
+  adminAction,
 }: {
   sold: boolean;
+  cancelled: boolean;
   onStartNewSale: (input: { itemName: string; itemDescription: string; startPrice: bigint; endPrice: bigint; durationSeconds: bigint }) => void;
-  adminStatus: "idle" | "starting" | "done" | "error";
+  onCancelSale: () => void;
+  adminStatus: "idle" | "starting" | "cancelling" | "done" | "error";
   adminError: string | null;
+  adminAction: "start" | "cancel" | null;
 }) {
   const [itemName, setItemName] = useState("");
   const [itemDescription, setItemDescription] = useState("");
@@ -87,11 +93,17 @@ function AdminPanel({
     Number.isInteger(parsedDuration) &&
     parsedDuration > 0;
 
-  const submitting = adminStatus === "starting";
+  // The current sale is still live — neither bought nor cancelled — so startNewSale would revert
+  // (see FlashDrop.sol's `require(sold || cancelled, ...)`). cancelSale() is the only way out of
+  // this state short of waiting for a buyer.
+  const active = !sold && !cancelled;
+  const startSubmittable = sold || cancelled;
+  const starting = adminStatus === "starting";
+  const cancelling = adminStatus === "cancelling";
 
   const handleSubmit = (e: FormEvent) => {
     e.preventDefault();
-    if (!formValid || !sold || submitting) return;
+    if (!formValid || !startSubmittable || starting) return;
     onStartNewSale({
       itemName: itemName.trim(),
       itemDescription: itemDescription.trim(),
@@ -103,48 +115,63 @@ function AdminPanel({
     });
   };
 
+  const handleCancel = () => {
+    if (!active || cancelling) return;
+    onCancelSale();
+  };
+
   return (
     <details className="admin-panel">
       <summary>Seller admin</summary>
-      <form className="admin-form" onSubmit={handleSubmit}>
-        {!sold && (
-          <p className="admin-hint">
-            The current sale is still active — startNewSale can only run once it's sold.
-          </p>
+      <div className="admin-body">
+        {active && (
+          <div className="admin-cancel-block">
+            <p className="admin-hint">
+              The current sale is still active — cancel it to start a different one, or wait until
+              it sells.
+            </p>
+            <button type="button" className="admin-cancel-button" onClick={handleCancel} disabled={cancelling}>
+              {cancelling ? "Cancelling…" : "Cancel this sale"}
+            </button>
+          </div>
         )}
-        <label>
-          Item name
-          <input type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="Vintage Leather Jacket" />
-        </label>
-        <label>
-          Item description
-          <textarea
-            value={itemDescription}
-            onChange={(e) => setItemDescription(e.target.value)}
-            placeholder="Size M, one owner, no visible wear."
-            rows={2}
-          />
-        </label>
-        <div className="admin-form-row">
+        <form className="admin-form" onSubmit={handleSubmit}>
           <label>
-            Start price (USD)
-            <input type="number" min="0" step="0.01" value={startPrice} onChange={(e) => setStartPrice(e.target.value)} placeholder="100" />
+            Item name
+            <input type="text" value={itemName} onChange={(e) => setItemName(e.target.value)} placeholder="Vintage Leather Jacket" />
           </label>
           <label>
-            End price (USD)
-            <input type="number" min="0" step="0.01" value={endPrice} onChange={(e) => setEndPrice(e.target.value)} placeholder="10" />
+            Item description
+            <textarea
+              value={itemDescription}
+              onChange={(e) => setItemDescription(e.target.value)}
+              placeholder="Size M, one owner, no visible wear."
+              rows={2}
+            />
           </label>
-        </div>
-        <label>
-          Duration (seconds)
-          <input type="number" min="1" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} placeholder="300" />
-        </label>
-        <button className="admin-submit" type="submit" disabled={!formValid || !sold || submitting}>
-          {submitting ? "Starting sale…" : "Start new sale"}
-        </button>
-        {adminStatus === "done" && <p className="admin-success">New sale started.</p>}
-        {adminError && <p className="error-message">{adminError}</p>}
-      </form>
+          <div className="admin-form-row">
+            <label>
+              Start price (USD)
+              <input type="number" min="0" step="0.01" value={startPrice} onChange={(e) => setStartPrice(e.target.value)} placeholder="100" />
+            </label>
+            <label>
+              End price (USD)
+              <input type="number" min="0" step="0.01" value={endPrice} onChange={(e) => setEndPrice(e.target.value)} placeholder="10" />
+            </label>
+          </div>
+          <label>
+            Duration (seconds)
+            <input type="number" min="1" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} placeholder="300" />
+          </label>
+          <button className="admin-submit" type="submit" disabled={!formValid || !startSubmittable || starting}>
+            {starting ? "Starting sale…" : "Start new sale"}
+          </button>
+          {adminStatus === "done" && (
+            <p className="admin-success">{adminAction === "cancel" ? "Sale cancelled." : "New sale started."}</p>
+          )}
+          {adminError && <p className="error-message">{adminError}</p>}
+        </form>
+      </div>
     </details>
   );
 }
@@ -153,14 +180,18 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
   const {
     account,
     connect,
+    disconnect,
     seller,
     adminStartNewSale,
+    adminCancelSale,
     adminStatus,
     adminError,
+    adminAction,
     sale,
     displayedPrice,
     auctionEnded,
     sold,
+    cancelled,
     buyer,
     soldPrice,
     status,
@@ -201,6 +232,27 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
       <h1>{sale?.itemName || FALLBACK_PRODUCT_NAME}</h1>
       <p className="description">{sale?.itemDescription || FALLBACK_PRODUCT_DESCRIPTION}</p>
 
+      {account ? (
+        <div className="wallet-status">
+          <span className="wallet-address">{shortAddress(account)}</span>
+          <button type="button" className="disconnect-link" onClick={disconnect}>
+            Disconnect
+          </button>
+        </div>
+      ) : (
+        // Connecting has to be reachable regardless of sale state (not just while a sale is
+        // active/unsold) — otherwise a seller landing fresh on an already-sold or already-cancelled
+        // sale would have no way to prove they're the seller and see the admin panel at all.
+        <button
+          type="button"
+          className="buy-button wallet-connect-button"
+          disabled={status === "connecting"}
+          onClick={connect}
+        >
+          {status === "connecting" ? "Connecting…" : "Connect wallet"}
+        </button>
+      )}
+
       {sold ? (
         <div className="sold-panel">
           <p className="sold-banner">SOLD</p>
@@ -209,6 +261,11 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
           <p className="finality-note">
             Finalized deterministically in under a second — no reorg can change this outcome.
           </p>
+        </div>
+      ) : cancelled ? (
+        <div className="cancelled-panel">
+          <p className="cancelled-banner">CANCELLED</p>
+          <p className="cancelled-note">The seller pulled this item before it sold.</p>
         </div>
       ) : (
         <>
@@ -230,13 +287,9 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
 
           {auctionEnded && <p className="ended-note">Price has reached its floor — still available at this price.</p>}
 
-          {account ? (
+          {account && (
             <button className="buy-button" disabled={busy} onClick={buyNow}>
               {buyLabel[status]}
-            </button>
-          ) : (
-            <button className="buy-button" disabled={status === "connecting"} onClick={connect}>
-              {status === "connecting" ? "Connecting…" : "Connect wallet"}
             </button>
           )}
 
@@ -250,7 +303,15 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
       )}
 
       {account && seller && account.toLowerCase() === seller.toLowerCase() && (
-        <AdminPanel sold={sold} onStartNewSale={adminStartNewSale} adminStatus={adminStatus} adminError={adminError} />
+        <AdminPanel
+          sold={sold}
+          cancelled={cancelled}
+          onStartNewSale={adminStartNewSale}
+          onCancelSale={adminCancelSale}
+          adminStatus={adminStatus}
+          adminError={adminError}
+          adminAction={adminAction}
+        />
       )}
     </>
   );

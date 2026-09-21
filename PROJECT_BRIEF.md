@@ -55,6 +55,7 @@ contrat entre plusieurs ventes, décision du 18/09/2026 — voir plus haut).
 
 - **Décroissance linéaire** (retenue le 18/09/2026) — formule simple, facile à auditer et à tester, cohérente avec l'esquisse de contrat ci-dessus. L'option exponentielle (plus spectaculaire visuellement) a été écartée pour privilégier la lisibilité de la démo et la simplicité des tests.
 - **Objet symbolique/numérique pour la démo** (retenu le 18/09/2026) — pas de logistique d'envoi physique ni de risque de planning avant la deadline du 14 octobre 2026. La démo se concentre sur le mécanisme on-chain (compte à rebours + achat), pas sur un objet réel à expédier.
+- **`cancelSale()` explicite plutôt qu'un `startNewSale()` assoupli** (retenu le 21/09/2026) — pour annuler une vente active sans acheteur, ajout d'un état `cancelled` distinct de `sold` (et de l'événement `SaleCancelled`), plutôt que de simplement retirer la contrainte `require(sold)` de `startNewSale`. Garde une trace on-chain propre (une vente annulée n'apparaît jamais comme "vendue" dans l'historique du frontend, qui ne lit que les événements `Sold`) et évite de confondre les deux états. `buy()` rejette aussi explicitement un achat sur une vente annulée (`"Sale was cancelled"`).
 
 ## Décision encore ouverte
 

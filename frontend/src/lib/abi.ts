@@ -10,6 +10,7 @@ export const flashDropAbi = [
   { type: "function", name: "startTime", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "duration", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "sold", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
+  { type: "function", name: "cancelled", stateMutability: "view", inputs: [], outputs: [{ type: "bool" }] },
   { type: "function", name: "buyer", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "soldPrice", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "currentPrice", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
@@ -52,6 +53,13 @@ export const flashDropAbi = [
     outputs: [],
   },
   {
+    type: "function",
+    name: "cancelSale",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
     type: "event",
     name: "Sold",
     inputs: [
@@ -71,6 +79,11 @@ export const flashDropAbi = [
       { name: "startTime", type: "uint256", indexed: false },
       { name: "duration", type: "uint256", indexed: false },
     ],
+  },
+  {
+    type: "event",
+    name: "SaleCancelled",
+    inputs: [{ name: "timestamp", type: "uint256", indexed: false }],
   },
 ] as const;
 

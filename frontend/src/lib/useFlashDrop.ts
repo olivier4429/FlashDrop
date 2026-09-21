@@ -22,7 +22,7 @@ export type BuyStatus =
   | "done"
   | "error";
 
-export type AdminStatus = "idle" | "starting" | "done" | "error";
+export type AdminStatus = "idle" | "starting" | "cancelling" | "done" | "error";
 
 export interface NewSaleInput {
   itemName: string;
@@ -79,6 +79,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   const [seller, setSeller] = useState<Address | null>(null);
   const [sale, setSale] = useState<SaleParams | null>(null);
   const [sold, setSold] = useState(false);
+  const [cancelled, setCancelled] = useState(false);
   const [buyer, setBuyer] = useState<Address | null>(null);
   const [soldPrice, setSoldPrice] = useState<bigint | null>(null);
   const [nowMs, setNowMs] = useState(() => Date.now());
@@ -86,6 +87,12 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   const [error, setError] = useState<string | null>(null);
   const [adminStatus, setAdminStatus] = useState<AdminStatus>("idle");
   const [adminError, setAdminError] = useState<string | null>(null);
+  // Which admin action `adminStatus === "done"` refers to. Deliberately NOT inferred from the
+  // polled `sold`/`cancelled` state at display time — that poll can lag up to 750ms behind the tx
+  // actually confirming, so right after starting a new sale (which resets `cancelled` on-chain),
+  // the frontend could still be showing a stale `cancelled === true` for a moment and mislabel the
+  // success message "Sale cancelled." instead of "New sale started.".
+  const [adminAction, setAdminAction] = useState<"start" | "cancel" | null>(null);
   // Null while the very first read is still in flight; a message once a read has actually failed
   // (e.g. VITE_FLASHDROP_ADDRESS points at a network the wallet isn't currently reading, since the
   // app uses one address across all networks in the dropdown rather than one per network).
@@ -102,6 +109,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setStatus("idle");
     setSeller(null);
     setSale(null);
+    setCancelled(false);
     setReadError(null);
     prevSoldRef.current = null;
   }, [chain, contractAddress]);
@@ -154,6 +162,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
             { address: contractAddress, abi: flashDropAbi, functionName: "startTime" },
             { address: contractAddress, abi: flashDropAbi, functionName: "duration" },
             { address: contractAddress, abi: flashDropAbi, functionName: "sold" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "cancelled" },
             { address: contractAddress, abi: flashDropAbi, functionName: "buyer" },
             { address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" },
           ],
@@ -172,18 +181,31 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
           setReadError(`Could not read a FlashDrop contract at ${contractAddress} on ${chain.name}.`);
           setSeller(null);
           setSale(null);
+          setCancelled(false);
         }
         scheduleNext(3000);
         return;
       }
       consecutiveFailures = 0;
 
-      const [sellerAddress, itemName, itemDescription, startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] =
-        results;
+      const [
+        sellerAddress,
+        itemName,
+        itemDescription,
+        startPrice,
+        endPrice,
+        startTime,
+        duration,
+        isSold,
+        isCancelled,
+        currentBuyer,
+        price,
+      ] = results;
       setReadError(null);
       setSeller(sellerAddress);
       setSale({ itemName, itemDescription, startPrice, endPrice, startTime, duration });
       setSold(isSold);
+      setCancelled(isCancelled);
       setBuyer(isSold ? currentBuyer : null);
       setSoldPrice(isSold ? price : null);
       // A new sale was just armed (startNewSale flips this true->false). Reset this wallet's own
@@ -214,10 +236,10 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
 
   // Drives the live countdown display; stops once the item is sold.
   useEffect(() => {
-    if (sold) return;
+    if (sold || cancelled) return;
     const id = setInterval(() => setNowMs(Date.now()), 100);
     return () => clearInterval(id);
-  }, [sold]);
+  }, [sold, cancelled]);
 
   const elapsedSeconds = sale
     ? BigInt(Math.max(0, Math.floor(nowMs / 1000) - Number(sale.startTime)))
@@ -242,6 +264,21 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       setStatus("error");
     }
   }, [chain]);
+
+  // Forgets the connected wallet on this page only — there's no way for a dApp to revoke a
+  // wallet extension's own connection permission (that's controlled entirely by the wallet, e.g.
+  // MetaMask's "Connected sites"), so this just drops the local session and returns the UI to
+  // "Connect wallet". Also clears admin state, since starting/cancelling a sale needs a connected
+  // wallet just like buying does.
+  const disconnect = useCallback(() => {
+    walletClientRef.current = null;
+    setAccount(null);
+    setStatus("idle");
+    setError(null);
+    setAdminStatus("idle");
+    setAdminError(null);
+    setAdminAction(null);
+  }, []);
 
   const buyNow = useCallback(async () => {
     const wallet = walletClientRef.current;
@@ -334,11 +371,12 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     }
   }, [account, sale, publicClient, contractAddress, chain]);
 
-  // Seller-only: arms the next item on this same contract instance once the current sale has
-  // sold. Unlike buy(), this is a plain write — no Permit2 signature involved, since it doesn't
-  // move any funds. The contract itself enforces `msg.sender == seller` and `sold == true` (see
-  // FlashDrop.sol), so this call will revert if either doesn't hold; this UI is only ever shown to
-  // the connected seller as a convenience, not as the actual access control.
+  // Seller-only: arms the next item on this same contract instance once the current sale has sold
+  // or been cancelled (see cancelSale below). Unlike buy(), this is a plain write — no Permit2
+  // signature involved, since it doesn't move any funds. The contract itself enforces
+  // `msg.sender == seller` and `sold || cancelled` (see FlashDrop.sol), so this call will revert
+  // if none of that holds; this UI is only ever shown to the connected seller as a convenience,
+  // not as the actual access control.
   const adminStartNewSale = useCallback(
     async (input: NewSaleInput) => {
       const wallet = walletClientRef.current;
@@ -355,6 +393,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
           chain,
         });
         await publicClient.waitForTransactionReceipt({ hash });
+        setAdminAction("start");
         setAdminStatus("done");
       } catch (err) {
         setAdminError(err instanceof Error ? err.message : String(err));
@@ -364,17 +403,48 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     [account, publicClient, contractAddress, chain],
   );
 
+  // Seller-only: pulls the current sale before anyone has bought it (e.g. wrong price, wrong
+  // item), so a new one can be armed via adminStartNewSale above instead of waiting for a sale
+  // nobody wants. The contract enforces `msg.sender == seller` and `!sold` (see cancelSale in
+  // FlashDrop.sol); same convenience-only UI gating as adminStartNewSale.
+  const adminCancelSale = useCallback(async () => {
+    const wallet = walletClientRef.current;
+    if (!wallet || !account) return;
+    setAdminError(null);
+    setAdminStatus("cancelling");
+    try {
+      const hash = await wallet.writeContract({
+        account,
+        address: contractAddress,
+        abi: flashDropAbi,
+        functionName: "cancelSale",
+        args: [],
+        chain,
+      });
+      await publicClient.waitForTransactionReceipt({ hash });
+      setAdminAction("cancel");
+      setAdminStatus("done");
+    } catch (err) {
+      setAdminError(err instanceof Error ? err.message : String(err));
+      setAdminStatus("error");
+    }
+  }, [account, publicClient, contractAddress, chain]);
+
   return {
     account,
     connect,
+    disconnect,
     seller,
     adminStartNewSale,
+    adminCancelSale,
     adminStatus,
     adminError,
+    adminAction,
     sale,
     displayedPrice,
     auctionEnded,
     sold,
+    cancelled,
     buyer,
     soldPrice,
     status,

@@ -7,8 +7,9 @@ import {ISignatureTransfer} from "./interfaces/IPermit2.sol";
 /// @notice Single-product reverse Dutch auction: the displayed price decays linearly from
 /// `startPrice` to `endPrice` over `duration` seconds, and the first `buy()` that lands wins the
 /// item at whatever price was current at that instant. One sale is active at a time — once it's
-/// sold, the seller can call `startNewSale` to reuse this same contract for the next item instead
-/// of redeploying (still no concurrent multi-item catalog — see PROJECT_BRIEF.md).
+/// sold (or cancelled via `cancelSale`), the seller can call `startNewSale` to reuse this same
+/// contract for the next item instead of redeploying (still no concurrent multi-item catalog —
+/// see PROJECT_BRIEF.md).
 contract FlashDrop {
     // USDC on Arc is both the ERC-20 interface (6 decimals, used here) and the native gas asset
     // (18 decimals, same underlying balance) — the two must never be mixed in a calculation. This
@@ -48,10 +49,18 @@ contract FlashDrop {
     address public buyer;
     uint256 public soldPrice;
 
+    // Set by the seller via cancelSale() to pull an active (not-yet-sold) sale without a purchase
+    // ever happening — distinct from `sold` so a cancelled sale never shows up as a completed sale
+    // (e.g. in the frontend's past-sales history, which is built from Sold events only) and so
+    // buy() can tell "someone already bought this" apart from "the seller pulled this item" when
+    // deciding what to revert with.
+    bool public cancelled;
+
     event Sold(address indexed buyer, uint256 price, uint256 timestamp);
     event SaleStarted(
         string itemName, string itemDescription, uint256 startPrice, uint256 endPrice, uint256 startTime, uint256 duration
     );
+    event SaleCancelled(uint256 timestamp);
 
     constructor(
         string memory _itemName,
@@ -64,9 +73,10 @@ contract FlashDrop {
         _startSale(_itemName, _itemDescription, _startPrice, _endPrice, _duration);
     }
 
-    /// @notice Reuses this contract for a new item once the current one has sold, instead of
-    /// deploying a fresh instance per item. Only the original seller may call this, and only
-    /// between sales — an active, not-yet-sold sale can't be interrupted or replaced.
+    /// @notice Reuses this contract for a new item once the current one has sold or been
+    /// cancelled, instead of deploying a fresh instance per item. Only the original seller may
+    /// call this, and only once the current sale is no longer active — an active, not-yet-sold,
+    /// not-yet-cancelled sale can't be interrupted or replaced directly (see cancelSale below).
     function startNewSale(
         string memory _itemName,
         string memory _itemDescription,
@@ -75,11 +85,24 @@ contract FlashDrop {
         uint256 _duration
     ) external {
         require(msg.sender == seller, "Only seller");
-        require(sold, "Current sale still active");
+        require(sold || cancelled, "Current sale still active");
         sold = false;
         buyer = address(0);
         soldPrice = 0;
+        cancelled = false;
         _startSale(_itemName, _itemDescription, _startPrice, _endPrice, _duration);
+    }
+
+    /// @notice Pulls the current sale before anyone has bought it, so the seller can start a
+    /// different one instead (e.g. wrong price, wrong item, changed their mind). Only the original
+    /// seller may call this, and only while the sale is still genuinely active — once it's sold
+    /// there's nothing left to cancel, and it can't be cancelled twice.
+    function cancelSale() external {
+        require(msg.sender == seller, "Only seller");
+        require(!sold, "Already sold");
+        require(!cancelled, "Already cancelled");
+        cancelled = true;
+        emit SaleCancelled(block.timestamp);
     }
 
     function _startSale(
@@ -120,6 +143,7 @@ contract FlashDrop {
     /// @param signature The EIP-712 signature over `permit`, produced by the buyer's wallet off-chain.
     function buy(ISignatureTransfer.PermitTransferFrom calldata permit, bytes calldata signature) external {
         require(!sold, "Already sold");
+        require(!cancelled, "Sale was cancelled");
         require(permit.permitted.token == USDC, "Permit token must be USDC");
 
         uint256 price = currentPrice();
