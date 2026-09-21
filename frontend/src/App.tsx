@@ -163,6 +163,12 @@ function AdminPanel({
             Duration (seconds)
             <input type="number" min="1" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} placeholder="300" />
           </label>
+          {startSubmittable && !formValid && (
+            <p className="admin-hint">
+              Fill in an item name, a start price above the end price, and a duration to enable
+              this.
+            </p>
+          )}
           <button className="admin-submit" type="submit" disabled={!formValid || !startSubmittable || starting}>
             {starting ? "Starting sale…" : "Start new sale"}
           </button>
