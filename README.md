@@ -163,6 +163,20 @@ Then set `VITE_FLASHDROP_ADDRESS` in `frontend/.env.local` to the deployed addre
 (`0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` — public, test-only, never
 used with real funds) to act as the buyer; `setupLocalMocks.ts` mints it test USDC by default.
 
+## Troubleshooting
+
+**Frontend says "Could not read a FlashDrop contract at 0x... on Arc Testnet/Mainnet" even though
+the address, network and `.env.local` all look correct.** Open the browser DevTools Console — if
+you see `ERR_BLOCKED_BY_CLIENT` on the RPC request, that's not a network, DNS, CORS or config
+issue: it means a browser-side blocker is silently dropping the request to `rpc.testnet.arc.io` /
+`rpc.mainnet.arc.io` before it ever leaves the browser. Confirmed cause in practice: **Brave
+Shields** (Brave's built-in ad/tracker blocker, on by default for every site) blocking the RPC
+call. Fix: click the Shields icon in the address bar for this site and turn Shields down for it
+(or lower "Trackers & ads blocking" from Aggressive to Standard). The same class of issue can come
+from other browsers' ad-blocker/privacy extensions (uBlock Origin, Privacy Badger, an antivirus web
+shield, etc.) — test in a private/incognito window with extensions disabled to confirm, then
+whitelist the RPC domain instead of leaving blocking off entirely.
+
 ## Key addresses (Arc mainnet and testnet — identical on both)
 
 | Contract | Address |
