@@ -5,9 +5,11 @@ import { useFlashDrop } from "./lib/useFlashDrop";
 import "./App.css";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_FLASHDROP_ADDRESS as string | undefined;
-const PRODUCT_NAME = import.meta.env.VITE_PRODUCT_NAME || "Free Fall";
-const PRODUCT_DESCRIPTION =
-  import.meta.env.VITE_PRODUCT_DESCRIPTION || "The price is in free fall. First confirmed buyer wins it.";
+// Fallback copy shown only before the first successful on-chain read — the actual item name and
+// description are read from the contract itself (see useFlashDrop.ts), not from build-time config,
+// so they always match whatever item the seller most recently started via startNewSale.
+const FALLBACK_PRODUCT_NAME = "Flash Drop";
+const FALLBACK_PRODUCT_DESCRIPTION = "Loading the current item…";
 
 function formatUsdc(amount: bigint): string {
   return Number(formatUnits(amount, 6)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -22,7 +24,12 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
     useFlashDrop(contractAddress, chain);
 
   if (readError) {
-    return <p className="description">{readError} Check that this network matches where you deployed it.</p>;
+    return (
+      <>
+        <h1>{FALLBACK_PRODUCT_NAME}</h1>
+        <p className="description">{readError} Check that this network matches where you deployed it.</p>
+      </>
+    );
   }
 
   const progress =
@@ -45,6 +52,9 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
 
   return (
     <>
+      <h1>{sale?.itemName || FALLBACK_PRODUCT_NAME}</h1>
+      <p className="description">{sale?.itemDescription || FALLBACK_PRODUCT_DESCRIPTION}</p>
+
       {sold ? (
         <div className="sold-panel">
           <p className="sold-banner">SOLD</p>
@@ -121,15 +131,15 @@ function App() {
           <p className="eyebrow">Arc Flash Drop</p>
           {networkPicker}
         </div>
-        <h1>{PRODUCT_NAME}</h1>
-        <p className="description">{PRODUCT_DESCRIPTION}</p>
-
         {!CONTRACT_ADDRESS || !isAddress(CONTRACT_ADDRESS) ? (
-          <p className="description">
-            Set <code>VITE_FLASHDROP_ADDRESS</code> in <code>frontend/.env.local</code> (see{" "}
-            <code>.env.example</code>) to a deployed FlashDrop contract address and restart the dev
-            server.
-          </p>
+          <>
+            <h1>{FALLBACK_PRODUCT_NAME}</h1>
+            <p className="description">
+              Set <code>VITE_FLASHDROP_ADDRESS</code> in <code>frontend/.env.local</code> (see{" "}
+              <code>.env.example</code>) to a deployed FlashDrop contract address and restart the dev
+              server.
+            </p>
+          </>
         ) : (
           <AuctionView contractAddress={CONTRACT_ADDRESS} chain={network.chain} />
         )}

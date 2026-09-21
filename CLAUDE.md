@@ -146,13 +146,13 @@ Contract (`cd contracts`):
 - `npm test` — run the Solidity test suite (`hardhat test solidity`)
 - Deploy a new instance (do this once per contract instance, not once per
   item — see `startNewSale` below):
-  `START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/deploy.ts --network <hardhatMainnet|localNode|arcTestnet|arcMainnet>`
+  `ITEM_NAME=<string> ITEM_DESCRIPTION=<string> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/deploy.ts --network <hardhatMainnet|localNode|arcTestnet|arcMainnet>`
   (`.env` filled in from `.env.example` needed for `arcTestnet`/`arcMainnet`;
   a wallet funded with real USDC for mainnet — no faucet there; testnet
   USDC from `faucet.circle.com`, select "Arc Testnet")
 - Reuse an already-deployed instance for the next item, once the current
   sale has sold (seller-only):
-  `FLASHDROP_ADDRESS=<deployed> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/startNewSale.ts --network <same network as deploy>`
+  `FLASHDROP_ADDRESS=<deployed> ITEM_NAME=<string> ITEM_DESCRIPTION=<string> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/startNewSale.ts --network <same network as deploy>`
 
 Local end-to-end testing (contract + frontend together, no testnet funds needed):
 - `cd contracts && npx hardhat node` — persistent local JSON-RPC node on `http://127.0.0.1:8545`

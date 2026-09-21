@@ -11,6 +11,16 @@ function envUint(name: string): bigint {
   return BigInt(value);
 }
 
+function envString(name: string): string {
+  const value = process.env[name];
+  if (value === undefined || value === "") {
+    throw new Error(`Missing required env var: ${name}`);
+  }
+  return value;
+}
+
+const itemName = envString("ITEM_NAME");
+const itemDescription = envString("ITEM_DESCRIPTION");
 const startPrice = envUint("START_PRICE"); // USDC, 6 decimals
 const endPrice = envUint("END_PRICE"); // USDC, 6 decimals
 const duration = envUint("DURATION_SECONDS");
@@ -19,7 +29,8 @@ const duration = envUint("DURATION_SECONDS");
 // hardhatMainnet simulator for a dry run) — see hardhat.config.ts.
 const { viem } = await network.create();
 
-const drop = await viem.deployContract("FlashDrop", [startPrice, endPrice, duration]);
+const drop = await viem.deployContract("FlashDrop", [itemName, itemDescription, startPrice, endPrice, duration]);
 
 console.log("FlashDrop deployed at:", drop.address);
+console.log("itemName:", itemName, "itemDescription:", itemDescription);
 console.log("startPrice:", startPrice.toString(), "endPrice:", endPrice.toString(), "duration:", duration.toString());

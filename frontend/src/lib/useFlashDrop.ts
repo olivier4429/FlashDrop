@@ -4,6 +4,8 @@ import { PERMIT2_ADDRESS, USDC_ADDRESS } from "./arcChain";
 import { erc20Abi, flashDropAbi } from "./abi";
 
 export interface SaleParams {
+  itemName: string;
+  itemDescription: string;
   startPrice: bigint;
   endPrice: bigint;
   startTime: bigint; // unix seconds
@@ -83,14 +85,17 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setReadError(null);
   }, [chain, contractAddress]);
 
-  // Polls the full sale state, including startPrice/endPrice/startTime/duration — these aren't
-  // truly immutable: the seller can reuse this same contract for a new item via startNewSale once
-  // the current one sells (see FlashDrop.sol), so the frontend has to keep re-reading them rather
-  // than fetching once and assuming they're fixed forever.
+  // Polls the full sale state, including itemName/itemDescription/startPrice/endPrice/startTime/
+  // duration — none of these are truly immutable: the seller can reuse this same contract for a
+  // new item via startNewSale once the current one sells (see FlashDrop.sol), so the frontend has
+  // to keep re-reading them rather than fetching once and assuming they're fixed forever. This is
+  // also why the item's title/description live on-chain at all rather than only in frontend
+  // config — a frontend-only value could otherwise show the previous item's name next to the new
+  // item's price right after a startNewSale.
   //
   // Batched into a single `multicall` (Multicall3, deployed on Arc at the same canonical address
-  // viem defaults to — see docs/arc-notes/03-adresses-contrats.md) instead of 7 separate eth_call
-  // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with 7
+  // viem defaults to — see docs/arc-notes/03-adresses-contrats.md) instead of 9 separate eth_call
+  // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with many
   // parallel requests every cycle, which surfaced as a misleading "no contract found" error even
   // though the contract and address were both correct — one request per poll avoids that entirely.
   //
@@ -120,6 +125,8 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       const results = await publicClient
         .multicall({
           contracts: [
+            { address: contractAddress, abi: flashDropAbi, functionName: "itemName" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "itemDescription" },
             { address: contractAddress, abi: flashDropAbi, functionName: "startPrice" },
             { address: contractAddress, abi: flashDropAbi, functionName: "endPrice" },
             { address: contractAddress, abi: flashDropAbi, functionName: "startTime" },
@@ -148,9 +155,10 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       }
       consecutiveFailures = 0;
 
-      const [startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] = results;
+      const [itemName, itemDescription, startPrice, endPrice, startTime, duration, isSold, currentBuyer, price] =
+        results;
       setReadError(null);
-      setSale({ startPrice, endPrice, startTime, duration });
+      setSale({ itemName, itemDescription, startPrice, endPrice, startTime, duration });
       setSold(isSold);
       setBuyer(isSold ? currentBuyer : null);
       setSoldPrice(isSold ? price : null);

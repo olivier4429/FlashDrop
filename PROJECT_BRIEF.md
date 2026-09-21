@@ -21,7 +21,9 @@ Candidature au programme **Arc Microgrants** (Circle/Arc) : 500 USDC par projet,
 
 **Mécanisme** : une enchère inversée (reverse Dutch auction) sur **un seul produit à la fois**. Le prix affiché décroît en temps réel depuis un `startPrice` jusqu'à un `endPrice` sur une durée fixée. Le premier acheteur qui valide son achat au prix affiché à cet instant l'emporte — la vente se ferme immédiatement (`sold = true`), pas de gestion de catalogue ni de stock.
 
-**Simplification actée** : une seule vente active à la fois. Pas de catalogue multi-produits concurrents dans le MVP. En revanche (décision du 18/09/2026, revenant sur le choix initial de redéployer à chaque objet), le même contrat est réutilisable d'une vente à l'autre : une fois la vente en cours conclue (`sold == true`), le vendeur (et lui seul) peut appeler `startNewSale(startPrice, endPrice, duration)` pour armer le prochain objet sur cette même instance, sans redéploiement. Voir `contracts/script/startNewSale.ts`.
+**Simplification actée** : une seule vente active à la fois. Pas de catalogue multi-produits concurrents dans le MVP. En revanche (décision du 18/09/2026, revenant sur le choix initial de redéployer à chaque objet), le même contrat est réutilisable d'une vente à l'autre : une fois la vente en cours conclue (`sold == true`), le vendeur (et lui seul) peut appeler `startNewSale(itemName, itemDescription, startPrice, endPrice, duration)` pour armer le prochain objet sur cette même instance, sans redéploiement. Voir `contracts/script/startNewSale.ts`.
+
+**Titre/description on-chain** (décision du 21/09/2026) — `itemName`/`itemDescription` sont stockés dans le contrat (fixés au constructeur et à chaque `startNewSale`), pas seulement côté frontend : comme le même contrat est réutilisé séquentiellement pour plusieurs objets, un titre géré uniquement en config frontend risquait de rester désynchronisé (ancien titre affiché avec le nouveau prix) si le vendeur oubliait de le mettre à jour à côté.
 
 ### Pourquoi Arc est réellement nécessaire ici (pas cosmétique)
 

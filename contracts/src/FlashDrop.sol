@@ -36,38 +36,68 @@ contract FlashDrop {
     uint256 public startTime;
     uint256 public duration; // seconds
 
+    // What's actually being sold. Stored on-chain (rather than only in frontend config) so that
+    // the item description always travels together with the price it's attached to: since the
+    // same contract instance is reused sequentially across items via startNewSale, a frontend-only
+    // title would otherwise risk showing the *previous* item's name next to the *new* item's price
+    // if the seller forgot to update it separately.
+    string public itemName;
+    string public itemDescription;
+
     bool public sold;
     address public buyer;
     uint256 public soldPrice;
 
     event Sold(address indexed buyer, uint256 price, uint256 timestamp);
-    event SaleStarted(uint256 startPrice, uint256 endPrice, uint256 startTime, uint256 duration);
+    event SaleStarted(
+        string itemName, string itemDescription, uint256 startPrice, uint256 endPrice, uint256 startTime, uint256 duration
+    );
 
-    constructor(uint256 _startPrice, uint256 _endPrice, uint256 _duration) {
+    constructor(
+        string memory _itemName,
+        string memory _itemDescription,
+        uint256 _startPrice,
+        uint256 _endPrice,
+        uint256 _duration
+    ) {
         seller = msg.sender;
-        _startSale(_startPrice, _endPrice, _duration);
+        _startSale(_itemName, _itemDescription, _startPrice, _endPrice, _duration);
     }
 
     /// @notice Reuses this contract for a new item once the current one has sold, instead of
     /// deploying a fresh instance per item. Only the original seller may call this, and only
     /// between sales — an active, not-yet-sold sale can't be interrupted or replaced.
-    function startNewSale(uint256 _startPrice, uint256 _endPrice, uint256 _duration) external {
+    function startNewSale(
+        string memory _itemName,
+        string memory _itemDescription,
+        uint256 _startPrice,
+        uint256 _endPrice,
+        uint256 _duration
+    ) external {
         require(msg.sender == seller, "Only seller");
         require(sold, "Current sale still active");
         sold = false;
         buyer = address(0);
         soldPrice = 0;
-        _startSale(_startPrice, _endPrice, _duration);
+        _startSale(_itemName, _itemDescription, _startPrice, _endPrice, _duration);
     }
 
-    function _startSale(uint256 _startPrice, uint256 _endPrice, uint256 _duration) internal {
+    function _startSale(
+        string memory _itemName,
+        string memory _itemDescription,
+        uint256 _startPrice,
+        uint256 _endPrice,
+        uint256 _duration
+    ) internal {
         require(_startPrice > _endPrice, "startPrice must exceed endPrice");
         require(_duration > 0, "duration must be positive");
+        itemName = _itemName;
+        itemDescription = _itemDescription;
         startPrice = _startPrice;
         endPrice = _endPrice;
         startTime = block.timestamp;
         duration = _duration;
-        emit SaleStarted(_startPrice, _endPrice, block.timestamp, _duration);
+        emit SaleStarted(_itemName, _itemDescription, _startPrice, _endPrice, block.timestamp, _duration);
     }
 
     /// @notice Current price, decaying linearly from startPrice to endPrice over `duration`.

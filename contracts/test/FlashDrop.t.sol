@@ -14,6 +14,8 @@ contract FlashDropTest is Test {
     address constant USDC = 0x3600000000000000000000000000000000000000;
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
+    string constant ITEM_NAME = "Test Item";
+    string constant ITEM_DESCRIPTION = "A thing being sold in a test.";
     uint256 constant START_PRICE = 100e6; // 100 USDC
     uint256 constant END_PRICE = 10e6; // 10 USDC
     uint256 constant DURATION = 1000; // seconds
@@ -31,7 +33,7 @@ contract FlashDropTest is Test {
         vm.etch(PERMIT2, address(new MockPermit2()).code);
 
         vm.prank(seller);
-        drop = new FlashDrop(START_PRICE, END_PRICE, DURATION);
+        drop = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
     }
 
     // ---- currentPrice() ----
@@ -134,7 +136,7 @@ contract FlashDropTest is Test {
         // already used nonce 0 against one FlashDrop instance cannot reuse it against a second one
         // either, even with a freshly-signed permit for that second contract as spender.
         vm.prank(seller);
-        FlashDrop secondDrop = new FlashDrop(START_PRICE, END_PRICE, DURATION);
+        FlashDrop secondDrop = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
         ISignatureTransfer.PermitTransferFrom memory replay = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
         bytes memory replaySig = _signPermitFor(address(secondDrop), buyerPrivateKey, replay);
 
@@ -148,28 +150,32 @@ contract FlashDropTest is Test {
     function test_startNewSale_revertsIfNotSeller() public {
         _completeASale();
         vm.expectRevert("Only seller");
-        drop.startNewSale(START_PRICE, END_PRICE, DURATION);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
     }
 
     function test_startNewSale_revertsIfCurrentSaleStillActive() public {
         vm.prank(seller);
         vm.expectRevert("Current sale still active");
-        drop.startNewSale(START_PRICE, END_PRICE, DURATION);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
     }
 
     function test_startNewSale_resetsStateForNextItem() public {
         _completeASale();
 
+        string memory newItemName = "Second Item";
+        string memory newItemDescription = "A different thing being sold.";
         uint256 newStartPrice = 50e6;
         uint256 newEndPrice = 5e6;
         uint256 newDuration = 500;
 
         vm.prank(seller);
-        drop.startNewSale(newStartPrice, newEndPrice, newDuration);
+        drop.startNewSale(newItemName, newItemDescription, newStartPrice, newEndPrice, newDuration);
 
         assertFalse(drop.sold());
         assertEq(drop.buyer(), address(0));
         assertEq(drop.soldPrice(), 0);
+        assertEq(drop.itemName(), newItemName);
+        assertEq(drop.itemDescription(), newItemDescription);
         assertEq(drop.startPrice(), newStartPrice);
         assertEq(drop.endPrice(), newEndPrice);
         assertEq(drop.duration(), newDuration);

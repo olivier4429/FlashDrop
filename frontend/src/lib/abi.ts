@@ -3,6 +3,8 @@
 // whenever FlashDrop.sol's public interface changes.
 export const flashDropAbi = [
   { type: "function", name: "seller", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
+  { type: "function", name: "itemName", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
+  { type: "function", name: "itemDescription", stateMutability: "view", inputs: [], outputs: [{ type: "string" }] },
   { type: "function", name: "startPrice", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "endPrice", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   { type: "function", name: "startTime", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
