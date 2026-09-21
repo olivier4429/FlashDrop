@@ -79,7 +79,8 @@ and the RPC URL for the network you're targeting.
 
 ```
 cd contracts
-START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
+ITEM_NAME="Vintage Leather Jacket" ITEM_DESCRIPTION="Size M, one owner, no visible wear." \
+  START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
   npx hardhat run script/deploy.ts --network arcTestnet
 ```
 
@@ -95,9 +96,14 @@ Deploy once per contract instance, not once per item. Once the current sale has 
 original seller can arm the same contract for the next item:
 
 ```
-FLASHDROP_ADDRESS=0x... START_PRICE=... END_PRICE=... DURATION_SECONDS=... \
+FLASHDROP_ADDRESS=0x... ITEM_NAME="..." ITEM_DESCRIPTION="..." \
+  START_PRICE=... END_PRICE=... DURATION_SECONDS=... \
   npx hardhat run script/startNewSale.ts --network arcTestnet
 ```
+
+`itemName`/`itemDescription` are stored on-chain (not just in frontend config) precisely because
+the same contract gets reused across items this way — the frontend always shows whatever item is
+currently live, with no risk of a stale title left over from before this call.
 
 This reverts if called by anyone other than the seller, or if the current sale hasn't sold yet.
 
@@ -115,9 +121,11 @@ Fill in `frontend/.env.local`:
 ```
 VITE_FLASHDROP_ADDRESS=0x...          # the deployed contract address
 VITE_CHAIN_ID=5042002                 # which network is pre-selected: 5042002 = Testnet, 5042 = Mainnet, 31337 = local
-VITE_PRODUCT_NAME="Free Fall"
-VITE_PRODUCT_DESCRIPTION="The price is in free fall. First confirmed buyer wins it."
 ```
+
+The item's title and description aren't set here — the frontend reads `itemName`/`itemDescription`
+live from the contract (see [Deploying](#deploying) above), so they always match whatever item the
+seller currently has live.
 
 The app has a network dropdown (top-right of the card) to switch between Arc Testnet, Arc Mainnet
 and the local Hardhat node at runtime — it changes which chain the wallet/RPC talks to, using the
@@ -144,7 +152,8 @@ cd contracts && npx hardhat node
 # terminal 2
 cd contracts
 npx hardhat run script/setupLocalMocks.ts --network localNode
-START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
+ITEM_NAME="Vintage Leather Jacket" ITEM_DESCRIPTION="Size M, one owner, no visible wear." \
+  START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
   npx hardhat run script/deploy.ts --network localNode
 ```
 
