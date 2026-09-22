@@ -1,8 +1,9 @@
 import { useState, type FormEvent } from "react";
-import { formatUnits, isAddress, parseUnits, type Address, type Chain } from "viem";
+import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import { DEFAULT_NETWORK_INDEX, NETWORKS } from "./lib/arcChain";
 import { useFlashDrop } from "./lib/useFlashDrop";
-import { useSaleHistory } from "./lib/useSaleHistory";
+// Disabled for now along with HistoryPanel below — see the comment at its render site.
+// import { useSaleHistory } from "./lib/useSaleHistory";
 import "./App.css";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_FLASHDROP_ADDRESS as string | undefined;
@@ -20,39 +21,43 @@ function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
 
-function formatTimestamp(timestamp: bigint): string {
-  return new Date(Number(timestamp) * 1000).toLocaleString(undefined, {
-    dateStyle: "medium",
-    timeStyle: "short",
-  });
-}
+// Only used by the disabled HistoryPanel below.
+// function formatTimestamp(timestamp: bigint): string {
+//   return new Date(Number(timestamp) * 1000).toLocaleString(undefined, {
+//     dateStyle: "medium",
+//     timeStyle: "short",
+//   });
+// }
 
 // Sidebar list of past sales, reconstructed from event logs (see useSaleHistory.ts) since the
 // contract only ever stores the current sale — there's no on-chain "history" to just read.
-function HistoryPanel({ contractAddress, chain }: { contractAddress: Address; chain: Chain }) {
-  const { history, loading } = useSaleHistory(contractAddress, chain);
-
-  return (
-    <aside className="history-panel">
-      <p className="eyebrow">Past sales</p>
-      {history === null && loading && <p className="history-empty">Loading…</p>}
-      {history !== null && history.length === 0 && <p className="history-empty">No past sales yet.</p>}
-      {history && history.length > 0 && (
-        <ul className="history-list">
-          {history.map((sale) => (
-            <li key={`${sale.blockNumber}-${sale.buyer}`} className="history-item">
-              <p className="history-item-name">{sale.itemName}</p>
-              <p className="history-item-meta">
-                ${formatUsdc(sale.price)} · {shortAddress(sale.buyer)}
-              </p>
-              <p className="history-item-time">{formatTimestamp(sale.timestamp)}</p>
-            </li>
-          ))}
-        </ul>
-      )}
-    </aside>
-  );
-}
+//
+// Disabled for now: its eth_getLogs polling was eating into the RPC quota. Re-enable by
+// uncommenting this function, the useSaleHistory import above, and its render site in App below.
+// function HistoryPanel({ contractAddress, chain }: { contractAddress: Address; chain: Chain }) {
+//   const { history, loading } = useSaleHistory(contractAddress, chain);
+//
+//   return (
+//     <aside className="history-panel">
+//       <p className="eyebrow">Past sales</p>
+//       {history === null && loading && <p className="history-empty">Loading…</p>}
+//       {history !== null && history.length === 0 && <p className="history-empty">No past sales yet.</p>}
+//       {history && history.length > 0 && (
+//         <ul className="history-list">
+//           {history.map((sale) => (
+//             <li key={`${sale.blockNumber}-${sale.buyer}`} className="history-item">
+//               <p className="history-item-name">{sale.itemName}</p>
+//               <p className="history-item-meta">
+//                 ${formatUsdc(sale.price)} · {shortAddress(sale.buyer)}
+//               </p>
+//               <p className="history-item-time">{formatTimestamp(sale.timestamp)}</p>
+//             </li>
+//           ))}
+//         </ul>
+//       )}
+//     </aside>
+//   );
+// }
 
 // Seller-only: arms the next item on this same contract instance. Only ever rendered when the
 // connected wallet matches seller() (see AuctionView below) — that check is a UI convenience, not
@@ -372,7 +377,9 @@ function App() {
             <AuctionView contractAddress={CONTRACT_ADDRESS as Address} chain={network.chain} />
           )}
         </div>
-        {contractConfigured && <HistoryPanel contractAddress={CONTRACT_ADDRESS as Address} chain={network.chain} />}
+        {/* Disabled for now: HistoryPanel reconstructs past sales via eth_getLogs polling, which was
+            eating into the RPC quota. Re-enable by uncommenting once that's under control.
+        {contractConfigured && <HistoryPanel contractAddress={CONTRACT_ADDRESS as Address} chain={network.chain} />} */}
       </div>
     </main>
   );
