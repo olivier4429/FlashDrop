@@ -315,7 +315,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
           {error && <p className="error-message">{error}</p>}
 
           <p className="pitch-note">
-            No public mempool on Arc means no one can see or front-run your purchase before it
+            No public mempool on Arc means no bot can see or front-run your purchase before it
             finalizes.
           </p>
         </>

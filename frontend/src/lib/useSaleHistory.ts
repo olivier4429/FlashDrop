@@ -64,7 +64,8 @@ const PAGE_SIZE_BLOCKS = 5000n; // conservative — some RPCs cap eth_getLogs to
 const MAX_PAGES = 20; // stop looking back after ~100k blocks even if HISTORY_LIMIT isn't reached
 
 // How often to re-scan for newly completed sales. Deliberately much slower than the 750ms price
-// poll in useFlashDrop.ts — sales are rare events (at most one every `duration` seconds), and each
+// poll in useFlashDrop.ts — completed sales are rare events (each one needs a buyer, then the
+// seller to arm the next item via startNewSale), and each
 // refresh here can cost several eth_getLogs calls, unlike the single batched multicall read the
 // price poll uses. This hook is self-contained (polls on its own timer) rather than being driven
 // by the current sale's `sold` flag from useFlashDrop, so it doesn't need that state lifted out of
@@ -74,8 +75,9 @@ const POLL_INTERVAL_MS = 30_000;
 // Reconstructs the last few completed sales from FlashDrop's event log, since the contract itself
 // only ever stores the CURRENT sale's state (see FlashDrop.sol) — nothing about past ones. Each
 // `Sold` event only carries buyer/price/timestamp, not which item was sold, so this pairs it with
-// whichever `SaleStarted` most recently preceded it (there's always exactly one, since a new sale
-// can only start once the previous one sold) to recover the item's name/description too.
+// whichever `SaleStarted` most recently preceded it (always the right one, since a new sale can
+// only start once the previous one sold or was cancelled, and a cancelled sale never emits `Sold`)
+// to recover the item's name/description too.
 function sortLogs(logs: HistoryLog[]): HistoryLog[] {
   // Oldest-first so "current item" can be tracked forward in time as SaleStarted events update
   // it, then each Sold event records a completed sale against whatever item was live for it.

@@ -5,7 +5,8 @@
 A single-product reverse Dutch auction ("Flash Drop") on Arc mainnet: the
 price of one item decreases in real time from a start price to an end
 price, and the first buyer to confirm the purchase at the current price
-wins. One contract = one product; no catalog, no multi-item logic in the
+wins. One contract = one product live at a time (reusable sequentially via
+`startNewSale`, see below); no catalog, no multi-item logic in the
 MVP. Built for the Arc Microgrants program (submission deadline: October
 14, 2026) — the deliverable must be a real, deployed, working proof of
 concept on Arc mainnet, not a theoretical exercise.
@@ -24,10 +25,15 @@ easy to get wrong (see "Arc-specific gotchas" below).
 ## Why Arc matters for this specific project (don't lose this framing)
 
 - **No public mempool on Arc** (`eth_subscribe("newPendingTransactions")`
-  is disabled at the RPC level) — this structurally prevents "sniping"
-  (a bot copying a pending buy transaction with higher gas to steal the
-  deal), a real and documented problem on time-based drops on chains with
-  a visible mempool.
+  is disabled at the RPC level) — this structurally prevents third-party
+  front-running (a bot copying a pending buy transaction with a higher
+  priority fee to take the item first), a well-documented form of MEV on
+  NFT mints and other time-sensitive sales on chains with a public
+  mempool. Use "front-running", not "sniping" (which usually means buying
+  underpriced listings fast), and don't cite sneaker drops as an example
+  (those bots are off-chain, no mempool involved). Ordering within a block
+  is still up to Arc's validators — don't claim more than "no outside
+  observer can see or copy a pending purchase".
 - **Deterministic sub-second finality** — once a purchase transaction is
   finalized, there's zero ambiguity about who bought first at what price,
   and no reorg risk that could change the winner after the fact.
@@ -151,7 +157,7 @@ Contract (`cd contracts`):
   a wallet funded with real USDC for mainnet — no faucet there; testnet
   USDC from `faucet.circle.com`, select "Arc Testnet")
 - Reuse an already-deployed instance for the next item, once the current
-  sale has sold (seller-only):
+  sale has sold or been cancelled via `cancelSale()` (seller-only):
   `FLASHDROP_ADDRESS=<deployed> ITEM_NAME=<string> ITEM_DESCRIPTION=<string> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/startNewSale.ts --network <same network as deploy>`
 
 Local end-to-end testing (contract + frontend together, no testnet funds needed):
@@ -181,14 +187,15 @@ Frontend (`cd frontend`):
   redeploy to a different network). `VITE_CHAIN_ID` picks which network is pre-selected on load
   (defaults to Testnet if unset, deliberately not Mainnet, to avoid landing on an unconfigured
   network — see `DEFAULT_NETWORK_INDEX` in `arcChain.ts`).
-- The price-countdown poll batches its 7 reads into a single Multicall3 call rather than 7 separate
-  `eth_call`s — found the hard way that Arc's public testnet RPC returns HTTP 429 (rate limited) to
-  a client firing 7 parallel requests every 750ms, which surfaced as a misleading "no contract
+- The price-countdown poll batches its reads (11 as of the `cancelSale` addition) into a single
+  Multicall3 call rather than one `eth_call` each — found the hard way (back when it was 7 reads)
+  that Arc's public testnet RPC returns HTTP 429 (rate limited) to a client firing 7 parallel
+  requests every 750ms, which surfaced as a misleading "no contract
   found" error even with a correct address/network. Each chain definition in `arcChain.ts` needs
   its own `contracts.multicall3.address` for viem's `multicall()` to work — it is NOT a global
   default. Arc's Multicall3 is at the standard canonical address on both mainnet and testnet.
 - The poll also adapts its own rate instead of running forever at one fixed interval (see the
-  `useEffect` in `useFlashDrop.ts`): 750ms only while a sale is active and unsold (when fast "sold"
+  `useEffect` in `useFlashDrop.ts`): 750ms while the sale is unsold, cancelled included (when fast "sold"
   detection actually matters for the demo), 3s once sold or after repeated read failures, and fully
   paused (zero RPC calls) while the browser tab isn't visible, resuming immediately when it is
   again. Verified with a headless-browser session tracking real request counts per phase.

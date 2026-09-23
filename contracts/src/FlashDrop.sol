@@ -18,12 +18,15 @@ contract FlashDrop {
     address public constant USDC = 0x3600000000000000000000000000000000000000;
 
     // Permit2 is already deployed on Arc (same address on mainnet/testnet, see docs/arc-notes/03).
-    // We use it instead of a plain approve()+buy() sequence: approve() is itself an on-chain
-    // transaction, and on a price that is dropping every block, requiring the buyer to send one
-    // transaction to approve and a second one to buy means the price has already moved between the
-    // two. Permit2's permitTransferFrom() lets the buyer authorize the purchase with a single
-    // off-chain EIP-712 signature (no gas, not a transaction) for "up to X USDC", and buy() below
-    // pulls only the current, lower, displayed price in one single on-chain transaction.
+    // We use it instead of having each buyer approve() this contract directly. With a plain
+    // approve(), every new FlashDrop instance would need its own on-chain approval before a first
+    // purchase — an extra transaction, and extra seconds, at exactly the moment the buyer has
+    // decided the price is right and is racing anyone else watching the same drop. With Permit2,
+    // the buyer approves Permit2 once (ever, across every contract that uses it), and each
+    // purchase after that is authorized by an off-chain EIP-712 signature (no gas, not a
+    // transaction) for "up to X USDC", bound to this contract, a single-use nonce and a deadline.
+    // buy() below then pulls only the current (possibly lower) price in one on-chain transaction,
+    // and no standing allowance to this contract is ever left behind.
     ISignatureTransfer public constant PERMIT2 = ISignatureTransfer(0x000000000022D473030F116dDEE9F6B43aC78BA3);
 
     // Fixed for the lifetime of this contract instance: every sale ever run through it, across
@@ -151,11 +154,13 @@ contract FlashDrop {
 
         // `sold` is locked before the external call to Permit2, both against reentrancy and because
         // this is the actual "first past the post" decision point of the auction. Arc has no public
-        // mempool (eth_subscribe("newPendingTransactions") is disabled at the RPC level), so no other
-        // buyer's client can ever see this transaction before it finalizes and race a copy of it in
-        // with higher gas — the classic "sniping" attack on time-based drops on mempool-visible
-        // chains structurally cannot happen here. Combined with Arc's deterministic sub-second
-        // finality, whichever buy() transaction is included first is final and undisputed.
+        // mempool (eth_subscribe("newPendingTransactions") is disabled at the RPC level), so no
+        // third-party bot can see this transaction before it finalizes and race a copy of it in
+        // with a higher priority fee — front-running, the well-documented form of MEV that hits
+        // time-sensitive sales on chains with a public mempool, structurally cannot happen here.
+        // (Ordering within a block is still up to Arc's validators; what's removed is outside
+        // observers.) Combined with Arc's deterministic sub-second finality, whichever buy()
+        // transaction is included first is final and undisputed.
         sold = true;
         buyer = msg.sender;
         soldPrice = price;

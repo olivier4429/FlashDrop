@@ -105,7 +105,8 @@ contract FlashDropTest is Test {
     }
 
     function test_buy_revertsIfSignedAmountBelowCurrentPrice() public {
-        // Buyer only signed for less than the item's starting (and thus current) price.
+        // Buyer only signed for less than even the floor price, so below the current price at any
+        // point in the sale (here, the start price).
         ISignatureTransfer.PermitTransferFrom memory permit =
             _buildPermit(END_PRICE - 1, 0, block.timestamp + 1 hours);
         bytes memory signature = _signPermit(permit);

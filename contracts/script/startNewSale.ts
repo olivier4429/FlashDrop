@@ -2,7 +2,7 @@ import { network } from "hardhat";
 
 // Reuses an already-deployed FlashDrop instance for a new item, instead of deploying a fresh
 // contract per item (see FlashDrop.sol's startNewSale — only callable by the original seller,
-// and only once the current sale has sold).
+// and only once the current sale has sold or been cancelled).
 function envUint(name: string): bigint {
   const value = process.env[name];
   if (value === undefined || value === "") {

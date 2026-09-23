@@ -122,16 +122,18 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   // config — a frontend-only value could otherwise show the previous item's name next to the new
   // item's price right after a startNewSale.
   //
-  // Batched into a single `multicall` (Multicall3, deployed on Arc at the same canonical address
-  // viem defaults to — see docs/arc-notes/03-adresses-contrats.md) instead of 9 separate eth_call
+  // Batched into a single `multicall` (Multicall3, deployed on Arc at the standard canonical
+  // address, configured per chain in arcChain.ts — viem has no global default; see
+  // docs/arc-notes/03-adresses-contrats.md) instead of 11 separate eth_call
   // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with many
   // parallel requests every cycle, which surfaced as a misleading "no contract found" error even
   // though the contract and address were both correct — one request per poll avoids that entirely.
   //
   // This self-schedules its next check (setTimeout, not setInterval) instead of polling forever at
   // a single fixed rate, so it only spends RPC calls when a fast response actually matters:
-  //   - FAST (750ms) only while a sale is active and unsold — this is what lets the UI flip to
-  //     "sold" almost as fast as the winning transaction lands, demonstrating Arc's speed.
+  //   - FAST (750ms) whenever the sale is unsold (including a cancelled one, which isn't
+  //     distinguished here) — this is what lets the UI flip to "sold" almost as fast as the
+  //     winning transaction lands, demonstrating Arc's speed.
   //   - SLOW (3s) once sold (waiting for a possible startNewSale), or after repeated read failures
   //     (a wrong address/network isn't going to fix itself by retrying faster).
   //   - PAUSED entirely while the tab isn't visible, resuming immediately when it is again.

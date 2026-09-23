@@ -6,14 +6,15 @@ price shown at that instant wins it. Built as a proof of concept for the Arc Mic
 
 ## The idea
 
-Most "flash drop" mechanics fall back on a fixed price plus a countdown timer, because a
-continuously falling price is genuinely dangerous to run on a normal blockchain: whoever is
-watching the mempool can see a buyer's transaction before it's confirmed, copy it with higher gas,
-and steal the deal at the price the original buyer was aiming for. That's called sniping, and it's
-a real, documented problem on time-sensitive drops (sneaker releases, NFT mints) on chains with a
-visible mempool.
+A continuously falling price has a specific weakness on chains with a public mempool: the moment
+a buyer decides the price is right and submits a purchase, that transaction is visible to everyone
+before it's confirmed. A bot can copy it with a higher priority fee, get included first, and take
+the item at the price the buyer had chosen. That's front-running, a well-documented form of MEV on
+NFT mints and other time-sensitive on-chain sales. On Ethereum it can be mitigated with private
+RPCs like Flashbots Protect, but that's opt-in tooling most buyers never use.
 
-FlashDrop is one contract, one product:
+FlashDrop is one contract with one product live at a time, reusable for the next item once the
+current one is sold or cancelled:
 
 - The seller deploys it with a `startPrice`, an `endPrice`, and a `duration`.
 - `currentPrice()` decays linearly between the two over that duration.
@@ -28,8 +29,10 @@ not just theoretically neat:
 
 - **No public mempool.** Arc disables pending-transaction visibility at the RPC level
   (`eth_subscribe("newPendingTransactions")` is not available). There is structurally nothing for
-  a sniping bot to see and copy before a `buy()` transaction finalizes — the attack class doesn't
-  apply here, not because it was mitigated, but because the data it depends on isn't exposed.
+  a front-running bot to see and copy before a `buy()` transaction finalizes — the attack class
+  doesn't apply here, not because it was mitigated, but because the data it depends on isn't
+  exposed. (This removes third-party front-running; transaction ordering within a block is still
+  up to Arc's validators.)
 - **Deterministic, sub-second finality.** Once a `buy()` transaction is included, there is zero
   ambiguity about who bought first at what price, and no reorg risk that could change the winner
   after the fact.
@@ -40,10 +43,12 @@ unique here is *how fast and how deterministically* that irreversibility is reac
 having no pre-finality visibility into pending purchases at all.
 
 On top of that, FlashDrop uses **Permit2** (already deployed on Arc at the same address on mainnet
-and testnet) so a purchase is a single wallet interaction: the buyer signs an off-chain EIP-712
-message authorizing the transfer, and `buy()` pulls the current price in one on-chain transaction.
-Without it, buying would take two transactions — an `approve()` and then the purchase — with the
-price dropping between them, which defeats the point of a live decreasing price.
+and testnet) so a purchase is a single on-chain transaction: the buyer signs an off-chain EIP-712
+message authorizing "up to X USDC" for this contract, and `buy()` pulls the current price in one
+transaction. The only on-chain approval is a one-time USDC → Permit2 approval, reused across every
+FlashDrop instance and every other Permit2-based app. Without it, each new contract would need its
+own `approve()` transaction before a first purchase — an extra transaction at exactly the moment
+the buyer is racing anyone else watching the same drop.
 
 More background on Arc itself (network fundamentals, the USDC-as-gas model, Permit2, the build
 tooling) lives in `docs/arc-notes/`, and the fuller project history — ideas considered and dropped,
@@ -69,7 +74,7 @@ docs/        Background research notes on Arc
 cd contracts
 npm install
 npm run compile
-npm test          # runs the Solidity test suite (12 tests)
+npm test          # runs the Solidity test suite (17 tests)
 ```
 
 ## Deploying
@@ -92,8 +97,9 @@ Note the deployed contract address printed at the end — you'll need it for the
 
 ### Reusing the contract for a new item
 
-Deploy once per contract instance, not once per item. Once the current sale has sold, the
-original seller can arm the same contract for the next item:
+Deploy once per contract instance, not once per item. Once the current sale has sold (or been
+cancelled by the seller via `cancelSale()`), the original seller can arm the same contract for the
+next item:
 
 ```
 FLASHDROP_ADDRESS=0x... ITEM_NAME="..." ITEM_DESCRIPTION="..." \
@@ -105,7 +111,7 @@ FLASHDROP_ADDRESS=0x... ITEM_NAME="..." ITEM_DESCRIPTION="..." \
 the same contract gets reused across items this way — the frontend always shows whatever item is
 currently live, with no risk of a stale title left over from before this call.
 
-This reverts if called by anyone other than the seller, or if the current sale hasn't sold yet.
+This reverts if called by anyone other than the seller, or if the current sale is still active (neither sold nor cancelled).
 
 ## Frontend
 
