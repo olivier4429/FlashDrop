@@ -26,9 +26,11 @@ if (!contractAddress) {
 
 const itemName = envString("ITEM_NAME");
 const itemDescription = envString("ITEM_DESCRIPTION");
+// uint64 on-chain (6-decimal USDC); viem rejects out-of-range values before sending anything.
 const startPrice = envUint("START_PRICE"); // USDC, 6 decimals
 const endPrice = envUint("END_PRICE"); // USDC, 6 decimals
-const duration = envUint("DURATION_SECONDS");
+// uint32 on-chain, which viem types as a plain number rather than a bigint.
+const duration = Number(envUint("DURATION_SECONDS"));
 
 const { viem } = await network.create();
 const drop = await viem.getContractAt("FlashDrop", contractAddress);

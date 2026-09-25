@@ -319,6 +319,17 @@ body {
   cursor: default;
 }
 
+.approval-note {
+  margin-top: 16px;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #b06b0c;
+}
+
+.approval-note a {
+  color: inherit;
+}
+
 .error-message {
   margin-top: 16px;
   font-size: 13px;

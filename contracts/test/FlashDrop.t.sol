@@ -5,20 +5,30 @@ import {Test} from "forge-std/Test.sol";
 import {FlashDrop} from "../src/FlashDrop.sol";
 import {ISignatureTransfer} from "../src/interfaces/IPermit2.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
-import {MockPermit2} from "./mocks/MockPermit2.sol";
 
 contract FlashDropTest is Test {
     // Must match the hardcoded constants in FlashDrop.sol exactly: the contract calls these
-    // addresses directly, so the mocks are placed at these addresses via vm.etch rather than at
-    // wherever `new MockUSDC()`/`new MockPermit2()` would normally deploy them.
+    // addresses directly, so the code under test is placed at these addresses via vm.etch.
+    //  - USDC: a minimal ERC-20 mock (FlashDrop only ever touches USDC's ERC-20 side).
+    //  - Permit2: NOT a mock — the exact runtime bytecode deployed at this address on Arc
+    //    mainnet, so every test exercises the real signature checks, nonce bitmap and custom
+    //    errors buyers will hit in production (see PERMIT2_BYTECODE_PATH below).
     address constant USDC = 0x3600000000000000000000000000000000000000;
     address constant PERMIT2 = 0x000000000022D473030F116dDEE9F6B43aC78BA3;
 
+    // Fetched with eth_getCode from rpc.mainnet.arc.io on 2026-09-25. Checked byte-for-byte
+    // against the canonical Uniswap Permit2 on Ethereum mainnet (same address, same length): the
+    // only differences are the two immutables baked in at deployment, the cached chain id (5042
+    // vs 1) and the domain separator derived from it. Etching it onto a test chain with another
+    // chain id is fine: Permit2 recomputes its domain separator whenever block.chainid differs
+    // from the cached one. Readable from tests via fsPermissions in hardhat.config.ts.
+    string constant PERMIT2_BYTECODE_PATH = "script/vendor/Permit2.deployedBytecode.txt";
+
     string constant ITEM_NAME = "Test Item";
     string constant ITEM_DESCRIPTION = "A thing being sold in a test.";
-    uint256 constant START_PRICE = 100e6; // 100 USDC
-    uint256 constant END_PRICE = 10e6; // 10 USDC
-    uint256 constant DURATION = 1000; // seconds
+    uint64 constant START_PRICE = 100e6; // 100 USDC
+    uint64 constant END_PRICE = 10e6; // 10 USDC
+    uint32 constant DURATION = 1000; // seconds
 
     address seller = makeAddr("seller");
     uint256 buyerPrivateKey = 0xB0B;
@@ -30,7 +40,7 @@ contract FlashDropTest is Test {
         buyer = vm.addr(buyerPrivateKey);
 
         vm.etch(USDC, address(new MockUSDC()).code);
-        vm.etch(PERMIT2, address(new MockPermit2()).code);
+        vm.etch(PERMIT2, vm.parseBytes(vm.trim(vm.readFile(PERMIT2_BYTECODE_PATH))));
 
         vm.prank(seller);
         drop = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
@@ -64,7 +74,7 @@ contract FlashDropTest is Test {
         bytes memory signature = _signPermit(permit);
 
         vm.prank(buyer);
-        drop.buy(permit, signature);
+        drop.buy(_saleId(drop), permit, signature);
 
         assertTrue(drop.sold());
         assertEq(drop.buyer(), buyer);
@@ -79,7 +89,7 @@ contract FlashDropTest is Test {
         _fundAndApprove(buyer, START_PRICE);
         ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
         vm.prank(buyer);
-        drop.buy(permit, _signPermit(permit));
+        drop.buy(_saleId(drop), permit, _signPermit(permit));
 
         address secondBuyer = vm.addr(0xC0FFEE);
         _fundAndApprove(secondBuyer, START_PRICE);
@@ -87,8 +97,8 @@ contract FlashDropTest is Test {
         bytes memory sig2 = _signPermitAs(0xC0FFEE, permit2);
 
         vm.prank(secondBuyer);
-        vm.expectRevert("Already sold");
-        drop.buy(permit2, sig2);
+        vm.expectRevert(FlashDrop.AlreadySold.selector);
+        drop.buy(_saleId(drop), permit2, sig2);
     }
 
     function test_buy_revertsIfPermitTokenIsNotUSDC() public {
@@ -100,8 +110,8 @@ contract FlashDropTest is Test {
         bytes memory signature = _signPermit(permit);
 
         vm.prank(buyer);
-        vm.expectRevert("Permit token must be USDC");
-        drop.buy(permit, signature);
+        vm.expectRevert(abi.encodeWithSelector(FlashDrop.PermitTokenNotUSDC.selector, address(0xDEAD)));
+        drop.buy(_saleId(drop), permit, signature);
     }
 
     function test_buy_revertsIfSignedAmountBelowCurrentPrice() public {
@@ -112,8 +122,10 @@ contract FlashDropTest is Test {
         bytes memory signature = _signPermit(permit);
 
         vm.prank(buyer);
-        vm.expectRevert("Signed amount below current price");
-        drop.buy(permit, signature);
+        vm.expectRevert(
+            abi.encodeWithSelector(FlashDrop.SignedAmountBelowPrice.selector, END_PRICE - 1, START_PRICE)
+        );
+        drop.buy(_saleId(drop), permit, signature);
     }
 
     function test_buy_revertsOnExpiredPermit() public {
@@ -122,8 +134,8 @@ contract FlashDropTest is Test {
         bytes memory signature = _signPermit(permit);
 
         vm.prank(buyer);
-        vm.expectRevert("Permit expired");
-        drop.buy(permit, signature);
+        vm.expectRevert(abi.encodeWithSelector(ISignatureTransfer.SignatureExpired.selector, permit.deadline));
+        drop.buy(_saleId(drop), permit, signature);
     }
 
     function test_buy_revertsOnReusedNonce() public {
@@ -131,7 +143,7 @@ contract FlashDropTest is Test {
         _fundAndApprove(buyer, START_PRICE * 2);
         ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
         vm.prank(buyer);
-        drop.buy(permit, _signPermit(permit));
+        drop.buy(_saleId(drop), permit, _signPermit(permit));
 
         // Permit2 nonces are scoped per owner (buyer), not per spender (contract) — so a buyer who
         // already used nonce 0 against one FlashDrop instance cannot reuse it against a second one
@@ -142,21 +154,21 @@ contract FlashDropTest is Test {
         bytes memory replaySig = _signPermitFor(address(secondDrop), buyerPrivateKey, replay);
 
         vm.prank(buyer);
-        vm.expectRevert("Nonce already used");
-        secondDrop.buy(replay, replaySig);
+        vm.expectRevert(ISignatureTransfer.InvalidNonce.selector);
+        secondDrop.buy(_saleId(secondDrop), replay, replaySig);
     }
 
     // ---- cancelSale() ----
 
     function test_cancelSale_revertsIfNotSeller() public {
-        vm.expectRevert("Only seller");
+        vm.expectRevert(FlashDrop.NotSeller.selector);
         drop.cancelSale();
     }
 
     function test_cancelSale_revertsIfAlreadySold() public {
         _completeASale();
         vm.prank(seller);
-        vm.expectRevert("Already sold");
+        vm.expectRevert(FlashDrop.AlreadySold.selector);
         drop.cancelSale();
     }
 
@@ -165,7 +177,7 @@ contract FlashDropTest is Test {
         drop.cancelSale();
 
         vm.prank(seller);
-        vm.expectRevert("Already cancelled");
+        vm.expectRevert(FlashDrop.AlreadyCancelled.selector);
         drop.cancelSale();
     }
 
@@ -179,8 +191,8 @@ contract FlashDropTest is Test {
         _fundAndApprove(buyer, START_PRICE);
         ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
         vm.prank(buyer);
-        vm.expectRevert("Sale was cancelled");
-        drop.buy(permit, _signPermit(permit));
+        vm.expectRevert(FlashDrop.SaleIsCancelled.selector);
+        drop.buy(_saleId(drop), permit, _signPermit(permit));
     }
 
     function test_cancelSale_letsSellerStartNewSaleWithoutASale() public {
@@ -198,7 +210,7 @@ contract FlashDropTest is Test {
         _fundAndApprove(buyer, START_PRICE);
         ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
         vm.prank(buyer);
-        drop.buy(permit, _signPermit(permit));
+        drop.buy(_saleId(drop), permit, _signPermit(permit));
         assertTrue(drop.sold());
     }
 
@@ -206,13 +218,13 @@ contract FlashDropTest is Test {
 
     function test_startNewSale_revertsIfNotSeller() public {
         _completeASale();
-        vm.expectRevert("Only seller");
+        vm.expectRevert(FlashDrop.NotSeller.selector);
         drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
     }
 
     function test_startNewSale_revertsIfCurrentSaleStillActive() public {
         vm.prank(seller);
-        vm.expectRevert("Current sale still active");
+        vm.expectRevert(FlashDrop.SaleStillActive.selector);
         drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
     }
 
@@ -221,9 +233,9 @@ contract FlashDropTest is Test {
 
         string memory newItemName = "Second Item";
         string memory newItemDescription = "A different thing being sold.";
-        uint256 newStartPrice = 50e6;
-        uint256 newEndPrice = 5e6;
-        uint256 newDuration = 500;
+        uint64 newStartPrice = 50e6;
+        uint64 newEndPrice = 5e6;
+        uint32 newDuration = 500;
 
         vm.prank(seller);
         drop.startNewSale(newItemName, newItemDescription, newStartPrice, newEndPrice, newDuration);
@@ -247,19 +259,186 @@ contract FlashDropTest is Test {
         bytes memory signature = _signPermitFor(address(drop), 0xC0FFEE, permit);
 
         vm.prank(secondBuyer);
-        drop.buy(permit, signature);
+        drop.buy(_saleId(drop), permit, signature);
 
         assertTrue(drop.sold());
         assertEq(drop.buyer(), secondBuyer);
     }
 
+    // ---- M-1: a purchase is bound to one specific sale ----
+
+    function test_startSale_incrementsSaleId() public {
+        assertEq(drop.saleId(), 1);
+        _completeASale();
+        vm.prank(seller);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+        assertEq(drop.saleId(), 2);
+    }
+
+    function test_buy_revertsIfSaleReplacedAfterSigning() public {
+        // Buyer looks at sale 1 and signs a generous ceiling for it...
+        uint64 seenSaleId = _saleId(drop);
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        bytes memory signature = _signPermit(permit);
+
+        // ...but before their transaction lands, the seller pulls it and arms a different item
+        // whose price is still under that ceiling.
+        vm.startPrank(seller);
+        drop.cancelSale();
+        drop.startNewSale("Different Item", ITEM_DESCRIPTION, START_PRICE / 2, END_PRICE, DURATION);
+        vm.stopPrank();
+
+        vm.prank(buyer);
+        vm.expectRevert(abi.encodeWithSelector(FlashDrop.SaleChanged.selector, seenSaleId, uint64(2)));
+        drop.buy(seenSaleId, permit, signature);
+    }
+
+    // ---- buy() edge cases ----
+
+    function test_buy_afterDurationPaysEndPrice() public {
+        vm.warp(block.timestamp + DURATION * 10);
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        vm.prank(buyer);
+        drop.buy(_saleId(drop), permit, _signPermit(permit));
+
+        assertEq(drop.soldPrice(), END_PRICE);
+        assertEq(MockUSDC(USDC).balanceOf(seller), END_PRICE);
+    }
+
+    function test_buy_succeedsWithSignedAmountExactlyAtCurrentPrice() public {
+        vm.warp(block.timestamp + DURATION / 4);
+        uint256 price = drop.currentPrice();
+        _fundAndApprove(buyer, price);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(price, 0, block.timestamp + 1 hours);
+        vm.prank(buyer);
+        drop.buy(_saleId(drop), permit, _signPermit(permit));
+
+        assertEq(MockUSDC(USDC).balanceOf(buyer), 0);
+    }
+
+    function test_buy_revertsIfSubmittedBySomeoneOtherThanTheSigner() public {
+        // Permit2 is told `owner = msg.sender`, so a signature lifted from the real buyer is
+        // useless to anyone else: it recovers to an address other than the caller.
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        bytes memory signature = _signPermit(permit);
+
+        address thief = makeAddr("thief");
+        vm.prank(thief);
+        vm.expectRevert(ISignatureTransfer.InvalidSigner.selector);
+        drop.buy(_saleId(drop), permit, signature);
+    }
+
+    function test_buy_emitsSold() public {
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        bytes memory signature = _signPermit(permit);
+
+        vm.expectEmit(address(drop));
+        emit FlashDrop.Sold(1, buyer, START_PRICE, block.timestamp);
+        vm.prank(buyer);
+        drop.buy(_saleId(drop), permit, signature);
+    }
+
+    // ---- _startSale() validation ----
+
+    function test_constructor_revertsIfStartPriceNotAboveEndPrice() public {
+        vm.expectRevert(FlashDrop.InvalidPriceRange.selector);
+        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, END_PRICE, END_PRICE, DURATION);
+    }
+
+    function test_constructor_revertsIfDurationZero() public {
+        vm.expectRevert(FlashDrop.ZeroDuration.selector);
+        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, 0);
+    }
+
+    function test_startNewSale_revertsOnInvalidParams() public {
+        _completeASale();
+        vm.startPrank(seller);
+        vm.expectRevert(FlashDrop.InvalidPriceRange.selector);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, END_PRICE, START_PRICE, DURATION);
+        vm.expectRevert(FlashDrop.ZeroDuration.selector);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, 0);
+        vm.stopPrank();
+    }
+
+    function test_startNewSale_emitsSaleStarted() public {
+        _completeASale();
+        vm.expectEmit(address(drop));
+        emit FlashDrop.SaleStarted(2, "Next", "Desc", 50e6, 5e6, block.timestamp, 500);
+        vm.prank(seller);
+        drop.startNewSale("Next", "Desc", 50e6, 5e6, 500);
+    }
+
+    function test_cancelSale_emitsSaleCancelled() public {
+        vm.expectEmit(address(drop));
+        emit FlashDrop.SaleCancelled(1, block.timestamp);
+        vm.prank(seller);
+        drop.cancelSale();
+    }
+
+    // ---- currentPrice() properties (fuzzed) ----
+
+    /// Over the full range of the narrow storage types: the price never rises as time passes, and
+    /// always stays within [endPrice, startPrice] — which is also what makes buy()'s
+    /// uint64(price) narrowing safe.
+    function testFuzz_currentPrice_monotonicAndBounded(uint64 high, uint64 low, uint32 dur, uint32 t1, uint32 t2)
+        public
+    {
+        vm.assume(high > low && dur > 0);
+        (t1, t2) = t1 <= t2 ? (t1, t2) : (t2, t1);
+
+        vm.prank(seller);
+        FlashDrop d = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, high, low, dur);
+        uint256 t0 = block.timestamp;
+
+        vm.warp(t0 + t1);
+        uint256 p1 = d.currentPrice();
+        vm.warp(t0 + t2);
+        uint256 p2 = d.currentPrice();
+
+        assertLe(p2, p1);
+        assertLe(p1, high);
+        assertGe(p2, low);
+    }
+
+    // ---- storage layout ----
+
+    /// Locks in the 2-slot packing documented in FlashDrop.sol: if a field is reordered or
+    /// widened, buy() silently goes back to touching more cold slots, and this test catches it.
+    function test_storageLayout_isPacked() public {
+        _completeASale();
+
+        uint256 slot0 = uint256(vm.load(address(drop), bytes32(uint256(0))));
+        assertEq(address(uint160(slot0)), buyer, "slot0: buyer");
+        assertEq(uint40(slot0 >> 160), drop.startTime(), "slot0: startTime");
+        assertEq(uint32(slot0 >> 200), drop.duration(), "slot0: duration");
+        assertEq(uint8(slot0 >> 232), 1, "slot0: sold");
+        assertEq(uint8(slot0 >> 240), 0, "slot0: cancelled");
+
+        uint256 slot1 = uint256(vm.load(address(drop), bytes32(uint256(1))));
+        assertEq(uint64(slot1), START_PRICE, "slot1: startPrice");
+        assertEq(uint64(slot1 >> 64), END_PRICE, "slot1: endPrice");
+        assertEq(uint64(slot1 >> 128), drop.soldPrice(), "slot1: soldPrice");
+        assertEq(uint64(slot1 >> 192), 1, "slot1: saleId");
+    }
+
     // ---- helpers ----
+
+    // Reads saleId straight from storage (slot 1, top 64 bits) rather than calling drop.saleId():
+    // an external call placed as a buy() argument would be the call that consumes a preceding
+    // vm.prank, while vm.load is a cheatcode and doesn't.
+    function _saleId(FlashDrop d) internal view returns (uint64) {
+        return uint64(uint256(vm.load(address(d), bytes32(uint256(1)))) >> 192);
+    }
 
     function _completeASale() internal {
         _fundAndApprove(buyer, START_PRICE);
         ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
         vm.prank(buyer);
-        drop.buy(permit, _signPermit(permit));
+        drop.buy(_saleId(drop), permit, _signPermit(permit));
     }
 
     function _fundAndApprove(address account, uint256 amount) internal {
@@ -295,9 +474,10 @@ contract FlashDropTest is Test {
         return _signPermitFor(address(drop), privateKey, permit);
     }
 
-    // Reproduces MockPermit2's exact EIP-712 hashing so tests sign what the mock will actually
-    // verify. `spender` is the contract that will call permitTransferFrom (msg.sender inside
-    // Permit2), which binds a buyer's signature to one specific FlashDrop instance.
+    // Reproduces Permit2's EIP-712 hashing for PermitTransferFrom (no witness), exactly what the
+    // real contract etched in setUp() verifies. `spender` is the contract that will call
+    // permitTransferFrom (msg.sender inside Permit2), which binds a buyer's signature to one
+    // specific FlashDrop instance.
     function _signPermitFor(address spender, uint256 privateKey, ISignatureTransfer.PermitTransferFrom memory permit)
         internal
         view

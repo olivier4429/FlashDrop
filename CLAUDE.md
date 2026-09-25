@@ -152,18 +152,22 @@ Contract (`cd contracts`):
 - `npm test` — run the Solidity test suite (`hardhat test solidity`)
 - Deploy a new instance (do this once per contract instance, not once per
   item — see `startNewSale` below):
-  `ITEM_NAME=<string> ITEM_DESCRIPTION=<string> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/deploy.ts --network <hardhatMainnet|localNode|arcTestnet|arcMainnet>`
+  `ITEM_NAME=<string> ITEM_DESCRIPTION=<string> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run --build-profile production script/deploy.ts --network <hardhatMainnet|localNode|arcTestnet|arcMainnet>`
+  (or `npm run deploy:testnet` / `deploy:mainnet`). Always use the `production` build profile for
+  a real network: plain `hardhat run` builds with `default`, which has the optimizer off.
   (`.env` filled in from `.env.example` needed for `arcTestnet`/`arcMainnet`;
   a wallet funded with real USDC for mainnet — no faucet there; testnet
   USDC from `faucet.circle.com`, select "Arc Testnet")
 - Reuse an already-deployed instance for the next item, once the current
   sale has sold or been cancelled via `cancelSale()` (seller-only):
-  `FLASHDROP_ADDRESS=<deployed> ITEM_NAME=<string> ITEM_DESCRIPTION=<string> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run script/startNewSale.ts --network <same network as deploy>`
+  `FLASHDROP_ADDRESS=<deployed> ITEM_NAME=<string> ITEM_DESCRIPTION=<string> START_PRICE=<6dp> END_PRICE=<6dp> DURATION_SECONDS=<n> npx hardhat run --build-profile production script/startNewSale.ts --network <same network as deploy>`
+  (or `npm run startNewSale:testnet` / `startNewSale:mainnet`)
 
 Local end-to-end testing (contract + frontend together, no testnet funds needed):
 - `cd contracts && npx hardhat node` — persistent local JSON-RPC node on `http://127.0.0.1:8545`
 - In another shell: `cd contracts && npx hardhat run script/setupLocalMocks.ts --network localNode`
-  — places mock USDC/Permit2 *and* Multicall3 at Arc's real addresses on this local node, and mints
+  — places a mock USDC, the real Permit2 bytecode (copied from Arc mainnet, see
+  `script/vendor/`) *and* Multicall3 at Arc's real addresses on this local node, and mints
   test USDC (see the script for `TEST_BUYER_ADDRESS`/`TEST_MINT_AMOUNT` overrides). USDC/Permit2 are
   needed for the buy() flow to work at all locally; Multicall3 is needed for the frontend's price
   countdown to read anything at all locally, since it batches its reads through Multicall3 (see
@@ -187,7 +191,7 @@ Frontend (`cd frontend`):
   redeploy to a different network). `VITE_CHAIN_ID` picks which network is pre-selected on load
   (defaults to Testnet if unset, deliberately not Mainnet, to avoid landing on an unconfigured
   network — see `DEFAULT_NETWORK_INDEX` in `arcChain.ts`).
-- The price-countdown poll batches its reads (11 as of the `cancelSale` addition) into a single
+- The price-countdown poll batches its reads (12 as of the `saleId` addition) into a single
   Multicall3 call rather than one `eth_call` each — found the hard way (back when it was 7 reads)
   that Arc's public testnet RPC returns HTTP 429 (rate limited) to a client firing 7 parallel
   requests every 750ms, which surfaced as a misleading "no contract

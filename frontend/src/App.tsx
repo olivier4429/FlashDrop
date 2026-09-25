@@ -17,6 +17,29 @@ function formatUsdc(amount: bigint): string {
   return Number(formatUnits(amount, 6)).toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
 }
 
+// Mirror the contract's parameter types (uint64 prices, uint32 duration), so an out-of-range value
+// is caught here instead of as a viem encoding error or an on-chain revert.
+const MAX_UINT64 = 2n ** 64n - 1n;
+const MAX_UINT32 = 2n ** 32n - 1n;
+
+// Strict decimal parsing rather than Number(): <input type="number"> accepts forms like "1e5"
+// that Number() reads fine but parseUnits() throws on, and Number() silently loses precision past
+// 2^53. At most 6 decimals: USDC on Arc uses 6 decimals at the ERC-20 interface FlashDrop reads
+// (see FlashDrop.sol's USDC comment), not the 18-decimal native one. Null means "not valid".
+function parseUsdcInput(value: string): bigint | null {
+  const trimmed = value.trim();
+  if (!/^\d+(\.\d{1,6})?$/.test(trimmed)) return null;
+  const amount = parseUnits(trimmed, 6);
+  return amount <= MAX_UINT64 ? amount : null;
+}
+
+function parseDurationInput(value: string): bigint | null {
+  const trimmed = value.trim();
+  if (!/^\d+$/.test(trimmed)) return null;
+  const seconds = BigInt(trimmed);
+  return seconds > 0n && seconds <= MAX_UINT32 ? seconds : null;
+}
+
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
@@ -45,7 +68,7 @@ function shortAddress(address: string): string {
 //       {history && history.length > 0 && (
 //         <ul className="history-list">
 //           {history.map((sale) => (
-//             <li key={`${sale.blockNumber}-${sale.buyer}`} className="history-item">
+//             <li key={String(sale.saleId)} className="history-item">
 //               <p className="history-item-name">{sale.itemName}</p>
 //               <p className="history-item-meta">
 //                 ${formatUsdc(sale.price)} · {shortAddress(sale.buyer)}
@@ -62,7 +85,7 @@ function shortAddress(address: string): string {
 // Seller-only: arms the next item on this same contract instance. Only ever rendered when the
 // connected wallet matches seller() (see AuctionView below) — that check is a UI convenience, not
 // the real access control, which is enforced on-chain by startNewSale's `msg.sender == seller`
-// require (see FlashDrop.sol). Anyone forging this form client-side would just get a revert.
+// check (NotSeller, see FlashDrop.sol). Anyone forging this form client-side would just get a revert.
 function AdminPanel({
   sold,
   cancelled,
@@ -86,20 +109,18 @@ function AdminPanel({
   const [endPrice, setEndPrice] = useState("");
   const [durationSeconds, setDurationSeconds] = useState("");
 
-  const parsedStart = Number(startPrice);
-  const parsedEnd = Number(endPrice);
-  const parsedDuration = Number(durationSeconds);
+  const parsedStart = parseUsdcInput(startPrice);
+  const parsedEnd = parseUsdcInput(endPrice);
+  const parsedDuration = parseDurationInput(durationSeconds);
   const formValid =
     itemName.trim() !== "" &&
-    Number.isFinite(parsedStart) &&
-    Number.isFinite(parsedEnd) &&
-    parsedStart > parsedEnd &&
-    parsedEnd >= 0 &&
-    Number.isInteger(parsedDuration) &&
-    parsedDuration > 0;
+    parsedStart !== null &&
+    parsedEnd !== null &&
+    parsedDuration !== null &&
+    parsedStart > parsedEnd;
 
   // The current sale is still live — neither bought nor cancelled — so startNewSale would revert
-  // (see FlashDrop.sol's `require(sold || cancelled, ...)`). cancelSale() is the only way out of
+  // (see FlashDrop.sol's SaleStillActive check). cancelSale() is the only way out of
   // this state short of waiting for a buyer.
   const active = !sold && !cancelled;
   const startSubmittable = sold || cancelled;
@@ -112,11 +133,9 @@ function AdminPanel({
     onStartNewSale({
       itemName: itemName.trim(),
       itemDescription: itemDescription.trim(),
-      // USDC on Arc uses 6 decimals at the ERC-20 interface FlashDrop reads (see FlashDrop.sol's
-      // USDC comment) — parseUnits(_, 6) converts the dollar amount typed here into that integer.
-      startPrice: parseUnits(startPrice, 6),
-      endPrice: parseUnits(endPrice, 6),
-      durationSeconds: BigInt(parsedDuration),
+      startPrice: parsedStart,
+      endPrice: parsedEnd,
+      durationSeconds: parsedDuration,
     });
   };
 
@@ -170,8 +189,8 @@ function AdminPanel({
           </label>
           {startSubmittable && !formValid && (
             <p className="admin-hint">
-              Fill in an item name, a start price above the end price, and a duration to enable
-              this.
+              Fill in an item name, a start price above the end price (up to 6 decimals), and a
+              whole number of seconds for the duration to enable this.
             </p>
           )}
           <button className="admin-submit" type="submit" disabled={!formValid || !startSubmittable || starting}>
@@ -209,6 +228,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
     error,
     buyNow,
     readError,
+    needsPermit2Approval,
   } = useFlashDrop(contractAddress, chain);
 
   if (readError) {
@@ -310,6 +330,22 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
             <button className="buy-button" disabled={busy} onClick={buyNow}>
               {buyLabel[status]}
             </button>
+          )}
+
+          {/* Shown before the first Buy click, not during it: the wallet popup covers the page at
+              that point. The approval is unlimited by design (it's what lets every later purchase
+              be a signature only), so the risk is spelled out here rather than hidden. */}
+          {account && needsPermit2Approval && (
+            <p className="approval-note">
+              Your first purchase asks your wallet to let Permit2 (Uniswap's standard transfer
+              contract) move your USDC, with no limit. It's a one-time step: later purchases only
+              need a signature. Only sign Permit2 requests on sites you trust — a malicious one could
+              use that approval to take your USDC. You can revoke it at any time, e.g. on{" "}
+              <a href="https://revoke.cash" target="_blank" rel="noopener noreferrer">
+                revoke.cash
+              </a>
+              .
+            </p>
           )}
 
           {error && <p className="error-message">{error}</p>}

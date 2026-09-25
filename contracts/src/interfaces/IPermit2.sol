@@ -6,6 +6,20 @@ pragma solidity ^0.8.24;
 /// and testnet at the same address (see docs/arc-notes/03-adresses-contrats.md); this interface
 /// just describes the parts of its ABI we call, it does not redeploy or reimplement anything.
 interface ISignatureTransfer {
+    // Custom errors the real Permit2 reverts with on the permitTransferFrom path, bubbled up
+    // unchanged through FlashDrop.buy(). Declared here so tests can expect them and so they can
+    // be mirrored into the frontend ABI for readable error messages. Names and signatures from
+    // Uniswap's Permit2 source (PermitErrors.sol, ISignatureTransfer.sol, SignatureVerification.sol);
+    // every selector confirmed present in the bytecode deployed at the Permit2 address on Arc
+    // mainnet on 2026-09-25 (see contracts/script/vendor/Permit2.deployedBytecode.txt).
+    error SignatureExpired(uint256 signatureDeadline);
+    error InvalidNonce();
+    error InvalidAmount(uint256 maxAmount);
+    error InvalidSignatureLength();
+    error InvalidSignature();
+    error InvalidSigner();
+    error InvalidContractSignature();
+
     struct TokenPermissions {
         address token;
         uint256 amount;

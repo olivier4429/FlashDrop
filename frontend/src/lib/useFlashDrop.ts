@@ -1,5 +1,17 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import { type Address, type Chain, createPublicClient, createWalletClient, custom, http, maxUint256 } from "viem";
+import {
+  type Address,
+  BaseError,
+  type Chain,
+  ContractFunctionRevertedError,
+  createPublicClient,
+  createWalletClient,
+  custom,
+  getAddress,
+  type Hash,
+  http,
+  maxUint256,
+} from "viem";
 import { PERMIT2_ADDRESS, USDC_ADDRESS } from "./arcChain";
 import { erc20Abi, flashDropAbi } from "./abi";
 
@@ -10,6 +22,10 @@ export interface SaleParams {
   endPrice: bigint;
   startTime: bigint; // unix seconds
   duration: bigint; // seconds
+  // Which sale these params belong to (FlashDrop increments it on every startNewSale). Passed back
+  // into buy() so the contract rejects the purchase if the item was replaced after the buyer
+  // looked at it — see FlashDrop.buy().
+  saleId: bigint;
 }
 
 export type BuyStatus =
@@ -51,6 +67,68 @@ function randomNonce(): bigint {
 }
 
 type ArcWalletClient = ReturnType<typeof createWalletClient>;
+type ArcPublicClient = ReturnType<typeof createPublicClient>;
+
+// Plain-language text for each custom error a write can revert with — FlashDrop's own, plus
+// Permit2's, which bubble up unchanged through buy(). Keyed by error name, which viem decodes from
+// the revert data using the error entries in abi.ts.
+const REVERT_MESSAGES: Record<string, string> = {
+  NotSeller: "Only the seller can do this.",
+  SaleStillActive: "The current sale is still active — cancel it first, or wait until it sells.",
+  AlreadySold: "Too late — someone else bought this item first. You were not charged.",
+  AlreadyCancelled: "This sale was already cancelled.",
+  SaleIsCancelled: "The seller cancelled this sale. You were not charged.",
+  SaleChanged:
+    "The seller replaced this item after you clicked Buy, so the purchase was refused and you were not charged. Check the new item and try again.",
+  PermitTokenNotUSDC: "The signed permit was not for USDC.",
+  SignedAmountBelowPrice:
+    "The on-chain price was above the amount you signed for (your device clock may be off). Try again.",
+  InvalidPriceRange: "The start price must be higher than the end price.",
+  ZeroDuration: "The duration must be at least 1 second.",
+  SignatureExpired: "Your signature expired before the purchase landed. Try again.",
+  InvalidNonce: "This signature was already used. Try again.",
+  InvalidAmount: "The purchase asked for more than the amount you signed for.",
+  InvalidSignatureLength: "Your wallet's signature could not be verified. Try again.",
+  InvalidSignature: "Your wallet's signature could not be verified. Try again.",
+  InvalidSigner: "The signature doesn't match the connected account. Try again.",
+  InvalidContractSignature: "Your smart-wallet signature could not be verified. Try again.",
+};
+
+function describeError(err: unknown): string {
+  if (err instanceof BaseError) {
+    const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
+    if (revert instanceof ContractFunctionRevertedError) {
+      const name = revert.data?.errorName;
+      if (name && REVERT_MESSAGES[name]) return REVERT_MESSAGES[name];
+    }
+    return err.shortMessage;
+  }
+  return err instanceof Error ? err.message : String(err);
+}
+
+// waitForTransactionReceipt resolves normally for a transaction that was mined but reverted — it
+// does not throw. That matters most for buy(): the wallet's gas estimate can pass, and the
+// transaction still revert because another buyer's purchase was included first. Without this
+// check the UI would show "Purchased!" to the buyer who lost the race. `replay` re-runs the same
+// call against the chain state as of that block, purely to recover the decoded revert reason
+// (e.g. AlreadySold) for the error message.
+async function waitForSuccess(
+  publicClient: ArcPublicClient,
+  hash: Hash,
+  replay?: (blockNumber: bigint) => Promise<unknown>,
+) {
+  const receipt = await publicClient.waitForTransactionReceipt({ hash });
+  if (receipt.status === "success") return receipt;
+  if (replay) await replay(receipt.blockNumber);
+  throw new Error("The transaction was reverted on-chain.");
+}
+
+// EIP-1193 provider as injected by browser wallets, plus the optional event API viem's `custom`
+// transport doesn't type.
+type InjectedProvider = Parameters<typeof custom>[0] & {
+  on?: (event: string, listener: (arg: unknown) => void) => void;
+  removeListener?: (event: string, listener: (arg: unknown) => void) => void;
+};
 
 async function ensureArcChain(wallet: ArcWalletClient, chain: Chain) {
   try {
@@ -124,7 +202,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   //
   // Batched into a single `multicall` (Multicall3, deployed on Arc at the standard canonical
   // address, configured per chain in arcChain.ts — viem has no global default; see
-  // docs/arc-notes/03-adresses-contrats.md) instead of 11 separate eth_call
+  // docs/arc-notes/03-adresses-contrats.md) instead of 12 separate eth_call
   // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with many
   // parallel requests every cycle, which surfaced as a misleading "no contract found" error even
   // though the contract and address were both correct — one request per poll avoids that entirely.
@@ -167,6 +245,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
             { address: contractAddress, abi: flashDropAbi, functionName: "cancelled" },
             { address: contractAddress, abi: flashDropAbi, functionName: "buyer" },
             { address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "saleId" },
           ],
           allowFailure: false,
         })
@@ -202,10 +281,21 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
         isCancelled,
         currentBuyer,
         price,
+        currentSaleId,
       ] = results;
       setReadError(null);
       setSeller(sellerAddress);
-      setSale({ itemName, itemDescription, startPrice, endPrice, startTime, duration });
+      // startTime (uint40) and duration (uint32) come back from viem as plain numbers — it only
+      // uses bigint for integer types wider than 48 bits — so widen them to match the rest.
+      setSale({
+        itemName,
+        itemDescription,
+        startPrice,
+        endPrice,
+        startTime: BigInt(startTime),
+        duration: BigInt(duration),
+        saleId: currentSaleId,
+      });
       setSold(isSold);
       setCancelled(isCancelled);
       setBuyer(isSold ? currentBuyer : null);
@@ -262,7 +352,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       setAccount(address);
       setStatus("idle");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
       setStatus("error");
     }
   }, [chain]);
@@ -281,6 +371,67 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setAdminError(null);
     setAdminAction(null);
   }, []);
+
+  // Follows account/network changes made inside the wallet itself (e.g. picking another account
+  // in MetaMask). Without this, `account` keeps the address that was connected first: the seller
+  // admin panel could stay visible for a non-seller, and signatures would fail with an opaque
+  // wallet error. A new account is simply adopted; a network change drops the session instead,
+  // since reconnecting is what re-runs ensureArcChain for the network picked in the dropdown.
+  useEffect(() => {
+    if (!account) return;
+    const injected = (window as { ethereum?: InjectedProvider }).ethereum;
+    if (!injected?.on) return;
+
+    const onAccountsChanged = (accounts: unknown) => {
+      const [next] = Array.isArray(accounts) ? accounts : [];
+      if (typeof next !== "string") {
+        disconnect();
+        return;
+      }
+      setAccount(getAddress(next));
+      setStatus("idle");
+      setError(null);
+      setAdminStatus("idle");
+      setAdminError(null);
+      setAdminAction(null);
+    };
+    const onChainChanged = (chainIdHex: unknown) => {
+      if (Number(chainIdHex) === chain.id) return;
+      disconnect();
+      setError(`Your wallet switched away from ${chain.name} — reconnect to continue.`);
+    };
+
+    injected.on("accountsChanged", onAccountsChanged);
+    injected.on("chainChanged", onChainChanged);
+    return () => {
+      injected.removeListener?.("accountsChanged", onAccountsChanged);
+      injected.removeListener?.("chainChanged", onChainChanged);
+    };
+  }, [account, chain, disconnect]);
+
+  // Whether this wallet still needs the one-time USDC -> Permit2 approval, read once per connect
+  // (and per item price) so the UI can warn about it *before* the Buy click opens the wallet
+  // popup, rather than while the popup already covers the page. Null while unknown. The result is
+  // tagged with the account it was read for, so switching accounts never shows the previous
+  // account's answer while the new read is in flight.
+  const [approvalCheck, setApprovalCheck] = useState<{ account: Address; needs: boolean } | null>(null);
+  const needsPermit2Approval = approvalCheck && approvalCheck.account === account ? approvalCheck.needs : null;
+  const startPrice = sale?.startPrice;
+  useEffect(() => {
+    if (!account || startPrice === undefined) return;
+    let stale = false;
+    publicClient
+      .readContract({ address: USDC_ADDRESS, abi: erc20Abi, functionName: "allowance", args: [account, PERMIT2_ADDRESS] })
+      .then((allowance) => {
+        if (!stale) setApprovalCheck({ account, needs: allowance < startPrice });
+      })
+      .catch(() => {
+        // Unknown: the warning just stays hidden, and buyNow still checks the allowance itself.
+      });
+    return () => {
+      stale = true;
+    };
+  }, [account, startPrice, publicClient]);
 
   const buyNow = useCallback(async () => {
     const wallet = walletClientRef.current;
@@ -309,7 +460,8 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
           args: [PERMIT2_ADDRESS, maxUint256],
           chain,
         });
-        await publicClient.waitForTransactionReceipt({ hash: approveHash });
+        await waitForSuccess(publicClient, approveHash);
+        setApprovalCheck({ account, needs: false });
       }
 
       setStatus("signing");
@@ -357,18 +509,20 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       });
 
       setStatus("buying");
-      const buyHash = await wallet.writeContract({
+      const buyRequest = {
         account,
         address: contractAddress,
         abi: flashDropAbi,
         functionName: "buy",
-        args: [{ permitted: { token: USDC_ADDRESS, amount: permittedAmount }, nonce, deadline }, signature],
-        chain,
-      });
-      await publicClient.waitForTransactionReceipt({ hash: buyHash });
+        args: [sale.saleId, { permitted: { token: USDC_ADDRESS, amount: permittedAmount }, nonce, deadline }, signature],
+      } as const;
+      const buyHash = await wallet.writeContract({ ...buyRequest, chain });
+      await waitForSuccess(publicClient, buyHash, (blockNumber) =>
+        publicClient.simulateContract({ ...buyRequest, blockNumber }),
+      );
       setStatus("done");
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(describeError(err));
       setStatus("error");
     }
   }, [account, sale, publicClient, contractAddress, chain]);
@@ -386,19 +540,21 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       setAdminError(null);
       setAdminStatus("starting");
       try {
-        const hash = await wallet.writeContract({
+        const request = {
           account,
           address: contractAddress,
           abi: flashDropAbi,
           functionName: "startNewSale",
-          args: [input.itemName, input.itemDescription, input.startPrice, input.endPrice, input.durationSeconds],
-          chain,
-        });
-        await publicClient.waitForTransactionReceipt({ hash });
+          args: [input.itemName, input.itemDescription, input.startPrice, input.endPrice, Number(input.durationSeconds)],
+        } as const;
+        const hash = await wallet.writeContract({ ...request, chain });
+        await waitForSuccess(publicClient, hash, (blockNumber) =>
+          publicClient.simulateContract({ ...request, blockNumber }),
+        );
         setAdminAction("start");
         setAdminStatus("done");
       } catch (err) {
-        setAdminError(err instanceof Error ? err.message : String(err));
+        setAdminError(describeError(err));
         setAdminStatus("error");
       }
     },
@@ -415,19 +571,21 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setAdminError(null);
     setAdminStatus("cancelling");
     try {
-      const hash = await wallet.writeContract({
+      const request = {
         account,
         address: contractAddress,
         abi: flashDropAbi,
         functionName: "cancelSale",
         args: [],
-        chain,
-      });
-      await publicClient.waitForTransactionReceipt({ hash });
+      } as const;
+      const hash = await wallet.writeContract({ ...request, chain });
+      await waitForSuccess(publicClient, hash, (blockNumber) =>
+        publicClient.simulateContract({ ...request, blockNumber }),
+      );
       setAdminAction("cancel");
       setAdminStatus("done");
     } catch (err) {
-      setAdminError(err instanceof Error ? err.message : String(err));
+      setAdminError(describeError(err));
       setAdminStatus("error");
     }
   }, [account, publicClient, contractAddress, chain]);
@@ -453,5 +611,6 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     error,
     buyNow,
     readError,
+    needsPermit2Approval,
   };
 }

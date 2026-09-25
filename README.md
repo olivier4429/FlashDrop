@@ -74,8 +74,13 @@ docs/        Background research notes on Arc
 cd contracts
 npm install
 npm run compile
-npm test          # runs the Solidity test suite (17 tests)
+npm test          # runs the Solidity test suite (30 tests, including a fuzz test)
 ```
+
+The tests run against the **real Permit2 bytecode deployed on Arc**, not a mock:
+`script/vendor/Permit2.deployedBytecode.txt` was copied from Arc mainnet with `eth_getCode`, and
+it matches the canonical Uniswap Permit2 on Ethereum byte for byte, apart from its two
+deployment-time immutables (the cached chain ID and domain separator). Only USDC is mocked.
 
 ## Deploying
 
@@ -86,8 +91,13 @@ and the RPC URL for the network you're targeting.
 cd contracts
 ITEM_NAME="Vintage Leather Jacket" ITEM_DESCRIPTION="Size M, one owner, no visible wear." \
   START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
-  npx hardhat run script/deploy.ts --network arcTestnet
+  npx hardhat run --build-profile production script/deploy.ts --network arcTestnet
 ```
+
+Always pass `--build-profile production` for a real network (or use `npm run deploy:testnet` /
+`npm run deploy:mainnet`, which do): without it, `hardhat run` compiles with the `default`
+profile, which has the optimizer off. Prices must fit in a `uint64` and the duration in a
+`uint32` (the contract's parameter types).
 
 Prices are USDC amounts in 6-decimal units (`100000000` = 100 USDC). Use `--network arcMainnet`
 for a real deploy (needs a wallet funded with real USDC — there is no mainnet faucet), or
@@ -104,7 +114,7 @@ next item:
 ```
 FLASHDROP_ADDRESS=0x... ITEM_NAME="..." ITEM_DESCRIPTION="..." \
   START_PRICE=... END_PRICE=... DURATION_SECONDS=... \
-  npx hardhat run script/startNewSale.ts --network arcTestnet
+  npx hardhat run --build-profile production script/startNewSale.ts --network arcTestnet
 ```
 
 `itemName`/`itemDescription` are stored on-chain (not just in frontend config) precisely because
@@ -149,7 +159,8 @@ future one) is just a signature and a transaction.
 
 You can exercise the whole flow — including a real wallet buy — against a local node, without
 needing Arc testnet USDC. The local node has no real USDC/Permit2/Multicall3 deployed at Arc's
-addresses, so a setup script places working mocks there first:
+addresses, so a setup script places them there first (a mock USDC, plus the real Permit2 and
+Multicall3 bytecode):
 
 ```
 # terminal 1
@@ -168,6 +179,20 @@ Then set `VITE_FLASHDROP_ADDRESS` in `frontend/.env.local` to the deployed addre
 `31337` network to your wallet, and import Hardhat's well-known test account #0 private key
 (`0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` — public, test-only, never
 used with real funds) to act as the buyer; `setupLocalMocks.ts` mints it test USDC by default.
+
+## Security note for buyers: the one-time Permit2 approval
+
+The first purchase from a wallet sends `approve(Permit2, unlimited)` on USDC. This is what makes
+every later purchase, on this drop or any future one, a single signature plus one transaction,
+with no new approval each time. The trade-off: any site that gets you to sign a malicious Permit2
+message could use that approval to move your USDC. The app warns about this before your first
+Buy click. In practice:
+
+- Only sign Permit2 requests on sites you trust. Check what the wallet shows: FlashDrop's
+  signatures always name USDC, an amount close to the displayed price, this contract as
+  `spender`, and a deadline two minutes away.
+- You can revoke the approval at any time (e.g. on [revoke.cash](https://revoke.cash)). The next
+  purchase will just ask for it again.
 
 ## Troubleshooting
 

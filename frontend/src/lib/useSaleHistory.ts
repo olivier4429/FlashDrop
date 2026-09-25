@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { type Address, type Chain, createPublicClient, http } from "viem";
 
 export interface PastSale {
+  saleId: bigint;
   itemName: string;
   itemDescription: string;
   price: bigint;
@@ -17,6 +18,7 @@ const saleStartedEvent = {
   type: "event",
   name: "SaleStarted",
   inputs: [
+    { name: "saleId", type: "uint64", indexed: true },
     { name: "itemName", type: "string", indexed: false },
     { name: "itemDescription", type: "string", indexed: false },
     { name: "startPrice", type: "uint256", indexed: false },
@@ -30,6 +32,7 @@ const soldEvent = {
   type: "event",
   name: "Sold",
   inputs: [
+    { name: "saleId", type: "uint64", indexed: true },
     { name: "buyer", type: "address", indexed: true },
     { name: "price", type: "uint256", indexed: false },
     { name: "timestamp", type: "uint256", indexed: false },
@@ -41,13 +44,13 @@ const soldEvent = {
 // ranges, so it's safe to assert them non-null rather than thread `| null` through this whole file.
 type SaleStartedLog = {
   eventName: "SaleStarted";
-  args: { itemName: string; itemDescription: string };
+  args: { saleId: bigint; itemName: string; itemDescription: string };
   blockNumber: bigint;
   logIndex: number;
 };
 type SoldLog = {
   eventName: "Sold";
-  args: { buyer: Address; price: bigint; timestamp: bigint };
+  args: { saleId: bigint; buyer: Address; price: bigint; timestamp: bigint };
   blockNumber: bigint;
   logIndex: number;
 };
@@ -73,14 +76,13 @@ const MAX_PAGES = 20; // stop looking back after ~100k blocks even if HISTORY_LI
 const POLL_INTERVAL_MS = 30_000;
 
 // Reconstructs the last few completed sales from FlashDrop's event log, since the contract itself
-// only ever stores the CURRENT sale's state (see FlashDrop.sol) — nothing about past ones. Each
-// `Sold` event only carries buyer/price/timestamp, not which item was sold, so this pairs it with
-// whichever `SaleStarted` most recently preceded it (always the right one, since a new sale can
-// only start once the previous one sold or was cancelled, and a cancelled sale never emits `Sold`)
-// to recover the item's name/description too.
+// only ever stores the CURRENT sale's state (see FlashDrop.sol) — nothing about past ones. A
+// `Sold` event carries buyer/price/timestamp but not the item's name, so this pairs it with the
+// `SaleStarted` event of the same `saleId` (both events index it) to recover the item's
+// name/description. Pairing by id rather than by "most recent SaleStarted before it" means the
+// result never depends on log ordering being reconstructed correctly across pages.
 function sortLogs(logs: HistoryLog[]): HistoryLog[] {
-  // Oldest-first so "current item" can be tracked forward in time as SaleStarted events update
-  // it, then each Sold event records a completed sale against whatever item was live for it.
+  // Oldest-first, so the history list (reversed to newest-first when stored) keeps chain order.
   return [...logs].sort((a, b) => {
     if (a.blockNumber !== b.blockNumber) return a.blockNumber < b.blockNumber ? -1 : 1;
     return a.logIndex - b.logIndex;
@@ -99,7 +101,7 @@ export function useSaleHistory(contractAddress: Address, chain: Chain) {
   // was triggering RPC rate limits (HTTP 429) on Arc's public RPC — see CLAUDE.md's note on
   // needing to batch/limit request volume against it.
   const lastScannedBlockRef = useRef<bigint | null>(null);
-  const currentItemRef = useRef<{ itemName: string; itemDescription: string } | null>(null);
+  const itemsBySaleIdRef = useRef(new Map<bigint, { itemName: string; itemDescription: string }>());
   // Guards against two overlapping scans running at once — most notably React StrictMode's
   // dev-only double-invocation of effects on mount, which otherwise fires two independent
   // `tick()` calls before either's cleanup can run, so two full multi-page backward scans would
@@ -112,7 +114,7 @@ export function useSaleHistory(contractAddress: Address, chain: Chain) {
   // a different chain.
   useEffect(() => {
     lastScannedBlockRef.current = null;
-    currentItemRef.current = null;
+    itemsBySaleIdRef.current = new Map();
     setHistory(null);
   }, [contractAddress, chain]);
 
@@ -208,13 +210,24 @@ export function useSaleHistory(contractAddress: Address, chain: Chain) {
 
       const sortedLogs = sortLogs(logs);
       const newSales: PastSale[] = [];
+      // Two passes: a Sold log's SaleStarted may sit anywhere in this batch (or in an earlier one,
+      // already in the map), so collect every item first, then resolve each sale against the map.
       for (const log of sortedLogs) {
         if (log.eventName === "SaleStarted") {
-          currentItemRef.current = { itemName: log.args.itemName, itemDescription: log.args.itemDescription };
-        } else if (log.eventName === "Sold") {
+          itemsBySaleIdRef.current.set(log.args.saleId, {
+            itemName: log.args.itemName,
+            itemDescription: log.args.itemDescription,
+          });
+        }
+      }
+      for (const log of sortedLogs) {
+        if (log.eventName === "Sold") {
+          // Missing only if the sale started before the oldest block the first scan reached.
+          const item = itemsBySaleIdRef.current.get(log.args.saleId);
           newSales.push({
-            itemName: currentItemRef.current?.itemName || "(unknown item)",
-            itemDescription: currentItemRef.current?.itemDescription || "",
+            saleId: log.args.saleId,
+            itemName: item?.itemName || "(unknown item)",
+            itemDescription: item?.itemDescription || "",
             price: log.args.price,
             buyer: log.args.buyer,
             timestamp: log.args.timestamp,

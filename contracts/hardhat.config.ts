@@ -15,17 +15,36 @@ export default defineConfig({
   },
   solidity: {
     profiles: {
+      // evmVersion pinned explicitly rather than left to the compiler default, so the bytecode
+      // never silently starts using opcodes Arc doesn't run if the compiler is bumped later.
+      // Cancun confirmed supported on 2026-09-25: eth_call against both rpc.mainnet.arc.io and
+      // rpc.testnet.arc.io successfully executed PUSH0, MCOPY and TLOAD.
       default: {
         version: "0.8.24",
+        settings: {
+          evmVersion: "cancun",
+        },
       },
+      // Use for every real deployment (arcTestnet/arcMainnet): `--build-profile production`.
+      // `hardhat run` otherwise builds with `default` above, which has the optimizer off.
       production: {
         version: "0.8.24",
         settings: {
+          evmVersion: "cancun",
           optimizer: {
             enabled: true,
             runs: 200,
           },
         },
+      },
+    },
+  },
+  test: {
+    solidity: {
+      // FlashDrop.t.sol etches the real Permit2 bytecode deployed on Arc (not a mock) from this
+      // file, see PERMIT2_BYTECODE_PATH there. setupLocalMocks.ts uses the same file.
+      fsPermissions: {
+        readFile: ["script/vendor/Permit2.deployedBytecode.txt"],
       },
     },
   },

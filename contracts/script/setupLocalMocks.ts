@@ -2,9 +2,11 @@ import fs from "node:fs";
 import { encodeFunctionData } from "viem";
 import { network } from "hardhat";
 
-// Local-testing helper: places minimal mock USDC/Permit2 contracts (the same ones the Solidity
-// test suite uses, see contracts/test/mocks/) at the exact addresses FlashDrop hardcodes for the
-// real Arc USDC and Permit2 deployments, then mints test USDC to a buyer address. This is what
+// Local-testing helper: places a minimal mock USDC (the same one the Solidity test suite uses, see
+// contracts/test/mocks/) and the real Permit2 bytecode (copied from Arc mainnet, see
+// script/vendor/Permit2.deployedBytecode.txt and FlashDrop.t.sol's PERMIT2_BYTECODE_PATH) at the
+// exact addresses FlashDrop hardcodes for Arc's USDC and Permit2, then mints test USDC to a buyer
+// address. This is what
 // lets a real wallet (e.g. MetaMask on the local Hardhat node) exercise the full buy() flow
 // without needing Arc testnet funds. See CLAUDE.md "Commands" > "Local end-to-end testing".
 //
@@ -54,15 +56,15 @@ if (!ALLOWED_LOCAL_CHAIN_IDS.includes(chainId)) {
 const mockUsdcBytecode = JSON.parse(
   fs.readFileSync("artifacts/test/mocks/MockUSDC.sol/MockUSDC.json", "utf8"),
 ).deployedBytecode;
-const mockPermit2Bytecode = JSON.parse(
-  fs.readFileSync("artifacts/test/mocks/MockPermit2.sol/MockPermit2.json", "utf8"),
-).deployedBytecode;
+// Real Permit2, not a mock: it recomputes its EIP-712 domain separator for this chain id, so
+// wallet signatures made against the local node verify exactly as they would on Arc.
+const permit2Bytecode = fs.readFileSync("script/vendor/Permit2.deployedBytecode.txt", "utf8").trim();
 const multicall3Bytecode = fs.readFileSync("script/vendor/Multicall3.deployedBytecode.txt", "utf8").trim();
 
 await publicClient.request({ method: "hardhat_setCode" as never, params: [USDC_ADDRESS, mockUsdcBytecode] as never });
 await publicClient.request({
   method: "hardhat_setCode" as never,
-  params: [PERMIT2_ADDRESS, mockPermit2Bytecode] as never,
+  params: [PERMIT2_ADDRESS, permit2Bytecode] as never,
 });
 await publicClient.request({
   method: "hardhat_setCode" as never,
@@ -81,7 +83,7 @@ await publicClient.waitForTransactionReceipt({ hash: mintTx });
 
 console.log("Local mocks ready on chain", chainId);
 console.log(
-  "Mock USDC + Permit2 + Multicall3 placed at Arc's real addresses:",
+  "Mock USDC + real Permit2 + Multicall3 placed at Arc's real addresses:",
   USDC_ADDRESS,
   PERMIT2_ADDRESS,
   MULTICALL3_ADDRESS,
