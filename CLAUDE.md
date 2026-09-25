@@ -183,7 +183,13 @@ Local end-to-end testing (contract + frontend together, no testnet funds needed)
 Frontend (`cd frontend`):
 - `npm install` — install dependencies (first time only)
 - `npm run dev` — dev server (default `http://localhost:5173`)
-- `npm run build` — production build
+- `npm run build` — production build; `npm run preview` serves it with the same security headers as
+  Vercel (read from `vercel.json`), to catch CSP violations locally
+- Deployed on Vercel via GitHub integration (Root Directory `frontend`): production = `main` on Arc
+  mainnet, previews = other branches on Arc testnet. `vite.config.ts` fails a Vercel build whose
+  env vars don't match that (and checks the address holds a current FlashDrop). Production builds
+  hide the network dropdown (`NETWORK_LOCKED`). The CSP `connect-src` in `vercel.json` must list
+  every RPC origin the app talks to. Details: `frontend/README.md`.
 - Needs `.env.local` (gitignored) filled in from `.env.example`. The app has a runtime network
   dropdown (Arc Testnet / Arc Mainnet / local node) that only switches which chain the wallet/RPC
   talks to — `VITE_FLASHDROP_ADDRESS` is a single value used regardless of the selection (there's

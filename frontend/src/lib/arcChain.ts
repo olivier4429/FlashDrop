@@ -83,6 +83,13 @@ export const DEFAULT_NETWORK_INDEX = Math.max(
   NETWORKS.findIndex((n) => String(n.chain.id) === import.meta.env.VITE_CHAIN_ID),
 );
 
+// Production builds (the public Vercel site) are pinned to VITE_CHAIN_ID: the dropdown is hidden,
+// since each deployment has exactly one contract address, on one network — switching would only
+// ever show a "could not read a FlashDrop contract" error. vite.config.ts refuses a Vercel build
+// whose VITE_CHAIN_ID doesn't match its environment (mainnet for production, testnet for
+// previews). The dropdown stays available under `npm run dev` for local testing.
+export const NETWORK_LOCKED = import.meta.env.PROD;
+
 // USDC ERC-20 interface address — identical on Arc mainnet and testnet. Confirmed via
 // docs.arc.io / explorer.arc.io Blockscout on 2026-09-17 (see docs/arc-notes/03-adresses-contrats.md).
 export const USDC_ADDRESS = "0x3600000000000000000000000000000000000000" as const;

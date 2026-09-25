@@ -143,8 +143,9 @@ The item's title and description aren't set here — the frontend reads `itemNam
 live from the contract (see [Deploying](#deploying) above), so they always match whatever item the
 seller currently has live.
 
-The app has a network dropdown (top-right of the card) to switch between Arc Testnet, Arc Mainnet
-and the local Hardhat node at runtime — it changes which chain the wallet/RPC talks to, using the
+Under `npm run dev`, the app has a network dropdown (top-right of the card) to switch between Arc
+Testnet, Arc Mainnet and the local Hardhat node at runtime (production builds hide it and stay on
+`VITE_CHAIN_ID`, see below) — it changes which chain the wallet/RPC talks to, using the
 same `VITE_FLASHDROP_ADDRESS` regardless of which one is selected (there's only ever one active
 deployment being tested at a time in this workflow; update that one value yourself if you redeploy
 to a different network).
@@ -154,6 +155,15 @@ testnet USDC — the app itself prompts your wallet to add/switch to that networ
 manual wallet network setup needed. Click **Buy now**: the first purchase ever from that wallet
 triggers a one-time USDC → Permit2 approval, then every purchase after that (on this drop or any
 future one) is just a signature and a transaction.
+
+### Deploying the frontend (Vercel)
+
+Production (`main`) serves Arc mainnet, preview deployments (other branches / PRs) serve Arc
+testnet. Configuration lives in `frontend/vercel.json`; the only dashboard settings are Root
+Directory = `frontend` and the per-environment variables. The build refuses to ship a
+misconfigured site (wrong network for the environment, missing address, no current FlashDrop at the
+address). Full checklist, environment variables and security headers:
+[`frontend/README.md`](frontend/README.md).
 
 ## Testing locally without testnet funds
 

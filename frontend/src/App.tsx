@@ -1,6 +1,6 @@
 import { useState, type FormEvent } from "react";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
-import { DEFAULT_NETWORK_INDEX, NETWORKS } from "./lib/arcChain";
+import { DEFAULT_NETWORK_INDEX, NETWORK_LOCKED, NETWORKS } from "./lib/arcChain";
 import { useFlashDrop } from "./lib/useFlashDrop";
 // Disabled for now along with HistoryPanel below — see the comment at its render site.
 // import { useSaleHistory } from "./lib/useSaleHistory";
@@ -376,7 +376,9 @@ function App() {
   const [networkIndex, setNetworkIndex] = useState(DEFAULT_NETWORK_INDEX);
   const network = NETWORKS[networkIndex];
 
-  const networkPicker = (
+  const networkPicker = NETWORK_LOCKED ? (
+    <span className="network-select network-label">{network.label}</span>
+  ) : (
     <select
       className="network-select"
       value={networkIndex}
