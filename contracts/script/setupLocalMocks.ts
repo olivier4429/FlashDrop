@@ -10,21 +10,21 @@ import { network } from "hardhat";
 // lets a real wallet (e.g. MetaMask on the local Hardhat node) exercise the full buy() flow
 // without needing Arc testnet funds. See CLAUDE.md "Commands" > "Local end-to-end testing".
 //
-// Guarded to only ever run against a local dev chain — never against Arc testnet/mainnet, where
+// Guarded to only ever run against a local dev chain : never against Arc testnet/mainnet, where
 // USDC and Permit2 are real deployments that must never be overwritten.
 const ALLOWED_LOCAL_CHAIN_IDS = [31337];
 
 const USDC_ADDRESS = "0x3600000000000000000000000000000000000000";
 const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
-// Multicall3 — deployed on Arc mainnet/testnet at this canonical address (confirmed via
+// Multicall3 : deployed on Arc mainnet/testnet at this canonical address (confirmed via
 // eth_getCode on 2026-09-18), and what the frontend batches its reads through (see
 // frontend/src/lib/arcChain.ts). A vanilla Hardhat node has no contract here by default, so local
 // testing needs it placed manually too, or the frontend's multicall() calls fail on this network
 // specifically while working fine against the real ones.
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";
 
-// Hardhat/Anvil's well-known first default test account — only ever meaningful on an ephemeral
+// Hardhat/Anvil's well-known first default test account : only ever meaningful on an ephemeral
 // local chain, safe to hardcode. Override with TEST_BUYER_ADDRESS to mint to a different address
 // instead (e.g. a MetaMask account you're testing with).
 const DEFAULT_TEST_BUYER = "0xf39Fd6e51aad88F6F4ce6aB8827279cffFb92266";
@@ -49,7 +49,7 @@ const chainId = await publicClient.getChainId();
 if (!ALLOWED_LOCAL_CHAIN_IDS.includes(chainId)) {
   throw new Error(
     `Refusing to run: chain id ${chainId} is not a recognized local dev chain (expected one of ${ALLOWED_LOCAL_CHAIN_IDS.join(", ")}). ` +
-      "This script overwrites the USDC/Permit2 addresses with test mocks — never run it against Arc testnet or mainnet.",
+      "This script overwrites the USDC/Permit2 addresses with test mocks : never run it against Arc testnet or mainnet.",
   );
 }
 

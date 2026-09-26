@@ -1,8 +1,8 @@
-# 09 — App Kit : Onramp et Earn
+# 09 : App Kit : Onramp et Earn
 
 Source : index `docs.arc.io/llms.txt` (descriptions officielles ; détail complet à récupérer page par page si ces capacités deviennent prioritaires).
 
-## Onramp — achat de stablecoins avec du fiat
+## Onramp : achat de stablecoins avec du fiat
 
 Widget embarqué permettant à un utilisateur d'acheter des stablecoins sur Arc directement avec de la monnaie fiduciaire.
 
@@ -26,7 +26,7 @@ const widget = kit.onramp.mountIframe({ session, container: document.getElementB
 ```
 Point d'attention : la session se crée **côté serveur** (endpoint à exposer), le widget se monte ensuite côté client.
 
-## Earn — rendement sur dépôts USDC/EURC
+## Earn : rendement sur dépôts USDC/EURC
 
 Dépôt dans des vaults générant du rendement via des protocoles de prêt tiers.
 

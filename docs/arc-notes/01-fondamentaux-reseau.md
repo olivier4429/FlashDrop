@@ -1,19 +1,19 @@
-# 01 — Fondamentaux du réseau Arc
+# 01 : Fondamentaux du réseau Arc
 
 Sources : `docs.arc.io/arc-chain`, `/arc/concepts/system-overview`, `/arc/concepts/deterministic-finality`, `/arc/concepts/opt-in-privacy`, `/arc/concepts/post-quantum-security` (roadmap), `/arc/references/connect-to-arc`.
 
-> **Mise à jour du 17/09/2026** — L'ambiguïté sur le Chain ID (notée plus bas dans la version précédente) est levée : **Mainnet et Testnet sont deux réseaux distincts, tous deux actifs**, chacun avec son propre Chain ID/RPC/explorer (voir tableau en fin de fichier). Le Mainnet Arc est en ligne depuis le 16 septembre 2026 (confirmé sur `community.arc.io`) — ce dossier de notes a été rédigé initialement dans un contexte testnet-only, à garder en tête en lisant les fichiers 04/10/11 qui restent centrés sur le testnet pour les tutoriels pas-à-pas.
+> **Mise à jour du 17/09/2026** : L'ambiguïté sur le Chain ID (notée plus bas dans la version précédente) est levée : **Mainnet et Testnet sont deux réseaux distincts, tous deux actifs**, chacun avec son propre Chain ID/RPC/explorer (voir tableau en fin de fichier). Le Mainnet Arc est en ligne depuis le 16 septembre 2026 (confirmé sur `community.arc.io`) : ce dossier de notes a été rédigé initialement dans un contexte testnet-only, à garder en tête en lisant les fichiers 04/10/11 qui restent centrés sur le testnet pour les tutoriels pas-à-pas.
 
 ## Qu'est-ce qu'Arc ?
 
-Une blockchain Layer-1 pensée dès le départ pour les applications financières en stablecoins : paiements, prêts/emprunts, FX, gestion de trésorerie, commerce agentique. Pas un token volatil natif — l'USDC en tient lieu (voir fichier 02).
+Une blockchain Layer-1 pensée dès le départ pour les applications financières en stablecoins : paiements, prêts/emprunts, FX, gestion de trésorerie, commerce agentique. Pas un token volatil natif : l'USDC en tient lieu (voir fichier 02).
 
 ## Architecture à deux couches
 
 Arc sépare **consensus** et **exécution**, deux couches qui avancent ensemble mais s'optimisent indépendamment :
 
-- **Couche consensus — Malachite** : implémentation performante du protocole BFT façon Tendermint. Ordonne les transactions et finalise les blocs sur un ensemble de validateurs permissionnés (Proof-of-Authority, composé d'institutions régulées). Vote en deux phases (pre-vote puis pre-commit) : dès que plus des deux tiers des validateurs sont d'accord, le bloc est **définitif et irréversible**. Débit annoncé : 3000+ TPS avec 20 validateurs, finalité <350ms en benchmark.
-- **Couche exécution — Reth** : client Ethereum écrit en Rust. Maintient l'état complet (comptes, soldes, contrats, storage), exécute la logique EVM, calcule la racine d'état (Merkle root). Étend le pipeline standard avec des modules propres à Arc (voir plus bas).
+- **Couche consensus : Malachite** : implémentation performante du protocole BFT façon Tendermint. Ordonne les transactions et finalise les blocs sur un ensemble de validateurs permissionnés (Proof-of-Authority, composé d'institutions régulées). Vote en deux phases (pre-vote puis pre-commit) : dès que plus des deux tiers des validateurs sont d'accord, le bloc est **définitif et irréversible**. Débit annoncé : 3000+ TPS avec 20 validateurs, finalité <350ms en benchmark.
+- **Couche exécution : Reth** : client Ethereum écrit en Rust. Maintient l'état complet (comptes, soldes, contrats, storage), exécute la logique EVM, calcule la racine d'état (Merkle root). Étend le pipeline standard avec des modules propres à Arc (voir plus bas).
 
 ### Cycle de vie d'une transaction
 
@@ -36,7 +36,7 @@ Tout ce cycle prend moins d'une seconde.
 | Arc Privacy Sector (APS) | Prévu, pas encore actif | Environnement d'exécution confidentiel pour contrats Solidity |
 | Stablecoin Services | Prévu, pas encore actif | Règlement multi-devises, transactions sponsorisées, gas payable en plusieurs stablecoins |
 
-Il existe aussi un précompilé **CallFrom**, qui préserve `msg.sender` à travers des appels délégués — utilisé par les contrats Memo et Multicall3From (voir fichier 03) pour permettre des transactions groupées ou annotées sans perdre l'identité de l'appelant d'origine.
+Il existe aussi un précompilé **CallFrom**, qui préserve `msg.sender` à travers des appels délégués : utilisé par les contrats Memo et Multicall3From (voir fichier 03) pour permettre des transactions groupées ou annotées sans perdre l'identité de l'appelant d'origine.
 
 ## Finalité déterministe
 
@@ -52,7 +52,7 @@ Contrairement aux chaînes probabilistes, une transaction sur Arc n'a que deux �
 
 **Bénéfices développeur** : pas de logique de retry/rollback liée aux reorgs, on peut déclencher des effets offchain (webhook, écriture BDD) dès le commit du bloc, gestion d'état simplifiée (2 états au lieu d'un compteur de confirmations), auditabilité pour la conformité réglementaire.
 
-## Vie privée optionnelle — Arc Privacy Sector (APS)
+## Vie privée optionnelle : Arc Privacy Sector (APS)
 
 > ⚠️ Fonctionnalité annoncée mais **pas encore disponible** sur Arc (roadmap).
 
@@ -68,9 +68,9 @@ Un contrat Solidity standard (ex. ERC-20 OpenZeppelin) pourrait être déployé 
 
 ## Sécurité post-quantique
 
-Arc prévoit des signatures de wallet **SLH-DSA-SHA2-128s** pour protéger les comptes contre les menaces quantiques futures — mentionné comme fonctionnalité clé de l'architecture (roadmap, à recouper avec `/arc/concepts/post-quantum-security` si besoin de détails).
+Arc prévoit des signatures de wallet **SLH-DSA-SHA2-128s** pour protéger les comptes contre les menaces quantiques futures : mentionné comme fonctionnalité clé de l'architecture (roadmap, à recouper avec `/arc/concepts/post-quantum-security` si besoin de détails).
 
-## Détails réseau — Mainnet et Testnet (vérifié sur `/arc/references/connect-to-arc`, 17/09/2026)
+## Détails réseau : Mainnet et Testnet (vérifié sur `/arc/references/connect-to-arc`, 17/09/2026)
 
 | Propriété | Mainnet | Testnet |
 |---|---|---|
@@ -82,11 +82,11 @@ Arc prévoit des signatures de wallet **SLH-DSA-SHA2-128s** pour protéger les c
 | RPC principal | `https://rpc.mainnet.arc.io` | `https://rpc.testnet.arc.io` |
 | RPC tiers | Alchemy, Blockdaemon, dRPC, QuickNode (URLs dédiées par fournisseur) | Blockdaemon, dRPC, QuickNode |
 | Explorer | `https://explorer.arc.io` | `https://explorer.testnet.arc.io` |
-| Faucet | — (pas de faucet mainnet, USDC réel requis) | `https://faucet.circle.com` |
+| Faucet | : (pas de faucet mainnet, USDC réel requis) | `https://faucet.circle.com` |
 | Finalité | Déterministe, sub-seconde | Déterministe, sub-seconde |
 | Participation validateurs | Permissionnée | Permissionnée |
 | Accès développeur | Permissionless | Permissionless |
 
-`viem` fournit les deux chaînes nativement : `import { arc } from "viem/chains"` (mainnet) et `import { arcTestnet } from "viem/chains"` (testnet) — pas besoin de les redéfinir à la main sauf besoin spécifique (ex. Reown AppKit qui requiert son propre `defineChain`).
+`viem` fournit les deux chaînes nativement : `import { arc } from "viem/chains"` (mainnet) et `import { arcTestnet } from "viem/chains"` (testnet) : pas besoin de les redéfinir à la main sauf besoin spécifique (ex. Reown AppKit qui requiert son propre `defineChain`).
 
 ⚠️ Ne pas confondre avec le sentinel EIP-7528 ni avec le token natif "affiché comme ETH" par certains wallets qui ne gèrent pas les gas tokens custom : dans les deux cas le solde affiché correspond bien à de l'USDC (18 décimales natif), voir fichier 02.

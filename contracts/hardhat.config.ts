@@ -4,7 +4,7 @@ import { configVariable, defineConfig } from "hardhat/config";
 
 // Arc mainnet/testnet RPC + chain IDs, from docs/arc-notes/01-fondamentaux-reseau.md.
 // PRIVATE_KEY is read from the environment via `configVariable` (Hardhat's keystore/env
-// mechanism) — never hardcoded, never committed. See contracts/.env.example.
+// mechanism) : never hardcoded, never committed. See contracts/.env.example.
 export default defineConfig({
   plugins: [hardhatToolboxViemPlugin],
   paths: {
@@ -49,13 +49,13 @@ export default defineConfig({
     },
   },
   networks: {
-    // Local EVM simulator for fast unit tests. Note: this is a generic EVM, not Arc-aware —
+    // Local EVM simulator for fast unit tests. Note: this is a generic EVM, not Arc-aware :
     // see the "Tech stack" note in CLAUDE.md for why that's an accepted gap for this contract.
     hardhatMainnet: {
       type: "edr-simulated",
       chainType: "l1",
     },
-    // A persistent local node (`npx hardhat node`), reachable over plain HTTP — unlike
+    // A persistent local node (`npx hardhat node`), reachable over plain HTTP : unlike
     // `hardhatMainnet` above (an in-process simulator with no RPC port), this lets an external
     // process such as the frontend dev server connect to a local chain for manual testing.
     localNode: {

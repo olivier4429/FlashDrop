@@ -1,18 +1,18 @@
-# 03 — Adresses de contrats de référence
+# 03 : Adresses de contrats de référence
 
 Source : `docs.arc.io/arc/references/contract-addresses`. **À revérifier sur la doc officielle avant tout usage réel** (les adresses peuvent évoluer, surtout côté testnet).
 
 ## Stablecoins
 
-### USDC — actif natif EVM, sert aussi de gas
+### USDC : actif natif EVM, sert aussi de gas
 | Réseau | Adresse (interface ERC-20) | Décimales |
 |---|---|---|
 | Mainnet | `0x3600000000000000000000000000000000000000` | 6 (ERC-20) / 18 (natif) |
 | Testnet | `0x3600000000000000000000000000000000000000` | idem |
 
-Pas d'adresse "wrapped USDC" — inutile, voir fichier 02. Faucet testnet : `faucet.circle.com`.
+Pas d'adresse "wrapped USDC" : inutile, voir fichier 02. Faucet testnet : `faucet.circle.com`.
 
-### EURC — stablecoin euro
+### EURC : stablecoin euro
 | Réseau | Adresse |
 |---|---|
 | Mainnet | `0xbEf5f6d51CB62b58e6A8f77868681825C6fe21c1` |
@@ -20,7 +20,7 @@ Pas d'adresse "wrapped USDC" — inutile, voir fichier 02. Faucet testnet : `fau
 
 6 décimales. Faucet testnet disponible (sélectionner "EURC" sur `faucet.circle.com`).
 
-### USYC — token de rendement (fonds monétaire tokenisé)
+### USYC : token de rendement (fonds monétaire tokenisé)
 | Contrat | Mainnet | Testnet |
 |---|---|---|
 | USYC | `0x8a5D989Bbb96929F689B0200f435f53dA42bF490` | `0xe9185F0c5F296Ed1797AaE4238D26CCaBEadb86C` |
@@ -29,7 +29,7 @@ Pas d'adresse "wrapped USDC" — inutile, voir fichier 02. Faucet testnet : `fau
 
 ⚠️ Réservé aux institutions hors des États-Unis, ticket d'entrée minimum 100 000 $, allowlisting requis (ticket support Circle, 24–48h). Peu pertinent en phase d'exploration/POC.
 
-## Crosschain (CCTP — Cross-Chain Transfer Protocol)
+## Crosschain (CCTP : Cross-Chain Transfer Protocol)
 
 Domaine Arc = **26**.
 
@@ -71,9 +71,9 @@ Domaine Arc = **26**.
 |---|---|---|
 | CREATE2 Factory (Arachnid) | `0x4e59b44847b379578588920cA78FbF26c0B4956C` | Déploiement déterministe |
 | Multicall3 | `0xcA11bde05977b3631167028862bE2a173976CA11` | Agrégation de lectures |
-| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | Approbations par signature — **requis pour StableFX** |
+| Permit2 | `0x000000000022D473030F116dDEE9F6B43aC78BA3` | Approbations par signature : **requis pour StableFX** |
 
 ## Adresse de test pour la blocklist (testnet uniquement)
 
 Dérivée de la mnémonique publique standard `test test test test test test test test test test test junk`, index 1 :
-`0x70997970C51812dc3A010C7d01b50e0d17dc79C8` — tout transfert de valeur vers/depuis cette adresse revert (y compris comme bénéficiaire d'un `SELFDESTRUCT`). Utile pour tester la gestion des reverts liés à la blocklist côté contrat.
+`0x70997970C51812dc3A010C7d01b50e0d17dc79C8` : tout transfert de valeur vers/depuis cette adresse revert (y compris comme bénéficiaire d'un `SELFDESTRUCT`). Utile pour tester la gestion des reverts liés à la blocklist côté contrat.

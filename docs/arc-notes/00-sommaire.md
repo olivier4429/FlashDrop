@@ -1,4 +1,4 @@
-# Notes Arc — Sommaire
+# Notes Arc : Sommaire
 
 Sources : [community.arc.io](https://community.arc.io/home/content) (contenu communautaire, articles, vidéos) et [docs.arc.io](https://docs.arc.io) (doc technique officielle, indexée via `/llms.txt`).
 
@@ -26,7 +26,7 @@ Objectif de ce dossier : avoir une base de référence pour comprendre les conce
 
 ## À retenir en une phrase
 
-Arc est une blockchain Layer-1 conçue pour la finance en stablecoins : l'USDC sert de token de gas natif (plus de token volatil à gérer), la finalité est déterministe en moins d'une seconde, et la compatibilité EVM est quasi totale (Solidity, Foundry, Hardhat, Viem fonctionnent presque sans changement) — à condition de connaître une poignée de différences protocolaires importantes (voir fichier 02).
+Arc est une blockchain Layer-1 conçue pour la finance en stablecoins : l'USDC sert de token de gas natif (plus de token volatil à gérer), la finalité est déterministe en moins d'une seconde, et la compatibilité EVM est quasi totale (Solidity, Foundry, Hardhat, Viem fonctionnent presque sans changement) : à condition de connaître une poignée de différences protocolaires importantes (voir fichier 02).
 
 ## Prochaine étape suggérée
 

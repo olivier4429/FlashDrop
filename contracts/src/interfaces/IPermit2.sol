@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-/// @notice Minimal subset of Uniswap's Permit2 `ISignatureTransfer` — only the pieces FlashDrop
+/// @notice Minimal subset of Uniswap's Permit2 `ISignatureTransfer` : only the pieces FlashDrop
 /// needs (a single-use, off-chain-signed transfer). Permit2 is already deployed on Arc mainnet
 /// and testnet at the same address (see docs/arc-notes/03-adresses-contrats.md); this interface
 /// just describes the parts of its ABI we call, it does not redeploy or reimplement anything.

@@ -28,7 +28,7 @@ const endPrice = envUint("END_PRICE"); // USDC, 6 decimals
 const duration = Number(envUint("DURATION_SECONDS"));
 
 // Uses whichever network was selected via `--network` (e.g. arcTestnet, arcMainnet, or the local
-// hardhatMainnet simulator for a dry run) — see hardhat.config.ts.
+// hardhatMainnet simulator for a dry run) : see hardhat.config.ts.
 const { viem } = await network.create();
 
 const drop = await viem.deployContract("FlashDrop", [itemName, itemDescription, startPrice, endPrice, duration]);

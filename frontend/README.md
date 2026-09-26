@@ -1,4 +1,4 @@
-# Arc Flash Drop — frontend
+# Arc Flash Drop : frontend
 
 React + Vite + viem. Local development and the contract side are covered in the root
 [`README.md`](../README.md); this file is about shipping the frontend to **Vercel**.

@@ -4,7 +4,7 @@ pragma solidity ^0.8.24;
 /// @notice Minimal ERC-20 standing in for Arc's real USDC (6-decimal ERC-20 interface) in tests.
 /// Only the surface FlashDrop/Permit2 actually exercise: transferFrom (via a one-time Permit2
 /// approval, mirroring real usage), balanceOf for assertions, and an unrestricted mint() for setup.
-/// This is NOT a model of Arc's dual native/ERC-20 USDC interface (see docs/arc-notes/02) — FlashDrop
+/// This is NOT a model of Arc's dual native/ERC-20 USDC interface (see docs/arc-notes/02) : FlashDrop
 /// only ever touches the ERC-20 side, so the test double only needs to cover that.
 contract MockUSDC {
     string public constant name = "Mock USD Coin";

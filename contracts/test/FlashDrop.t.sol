@@ -10,7 +10,7 @@ contract FlashDropTest is Test {
     // Must match the hardcoded constants in FlashDrop.sol exactly: the contract calls these
     // addresses directly, so the code under test is placed at these addresses via vm.etch.
     //  - USDC: a minimal ERC-20 mock (FlashDrop only ever touches USDC's ERC-20 side).
-    //  - Permit2: NOT a mock — the exact runtime bytecode deployed at this address on Arc
+    //  - Permit2: NOT a mock : the exact runtime bytecode deployed at this address on Arc
     //    mainnet, so every test exercises the real signature checks, nonce bitmap and custom
     //    errors buyers will hit in production (see PERMIT2_BYTECODE_PATH below).
     address constant USDC = 0x3600000000000000000000000000000000000000;
@@ -145,7 +145,7 @@ contract FlashDropTest is Test {
         vm.prank(buyer);
         drop.buy(_saleId(drop), permit, _signPermit(permit));
 
-        // Permit2 nonces are scoped per owner (buyer), not per spender (contract) — so a buyer who
+        // Permit2 nonces are scoped per owner (buyer), not per spender (contract) : so a buyer who
         // already used nonce 0 against one FlashDrop instance cannot reuse it against a second one
         // either, even with a freshly-signed permit for that second contract as spender.
         vm.prank(seller);
@@ -382,7 +382,7 @@ contract FlashDropTest is Test {
     // ---- currentPrice() properties (fuzzed) ----
 
     /// Over the full range of the narrow storage types: the price never rises as time passes, and
-    /// always stays within [endPrice, startPrice] — which is also what makes buy()'s
+    /// always stays within [endPrice, startPrice] : which is also what makes buy()'s
     /// uint64(price) narrowing safe.
     function testFuzz_currentPrice_monotonicAndBounded(uint64 high, uint64 low, uint32 dur, uint32 t1, uint32 t2)
         public
@@ -444,7 +444,7 @@ contract FlashDropTest is Test {
     function _fundAndApprove(address account, uint256 amount) internal {
         MockUSDC(USDC).mint(account, amount);
         // Real-world equivalent of the one-time, ever-lasting approve(Permit2, max) a wallet does
-        // once before its first Permit2-based purchase — every purchase after that needs only a
+        // once before its first Permit2-based purchase : every purchase after that needs only a
         // signature, never another on-chain approval.
         vm.prank(account);
         MockUSDC(USDC).approve(PERMIT2, type(uint256).max);

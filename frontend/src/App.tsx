@@ -2,12 +2,12 @@ import { useState, type FormEvent } from "react";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
 import { DEFAULT_NETWORK_INDEX, NETWORK_LOCKED, NETWORKS } from "./lib/arcChain";
 import { useFlashDrop } from "./lib/useFlashDrop";
-// Disabled for now along with HistoryPanel below — see the comment at its render site.
+// Disabled for now along with HistoryPanel below : see the comment at its render site.
 // import { useSaleHistory } from "./lib/useSaleHistory";
 import "./App.css";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_FLASHDROP_ADDRESS as string | undefined;
-// Fallback copy shown only before the first successful on-chain read — the actual item name and
+// Fallback copy shown only before the first successful on-chain read : the actual item name and
 // description are read from the contract itself (see useFlashDrop.ts), not from build-time config,
 // so they always match whatever item the seller most recently started via startNewSale.
 const FALLBACK_PRODUCT_NAME = "Flash Drop";
@@ -53,7 +53,7 @@ function shortAddress(address: string): string {
 // }
 
 // Sidebar list of past sales, reconstructed from event logs (see useSaleHistory.ts) since the
-// contract only ever stores the current sale — there's no on-chain "history" to just read.
+// contract only ever stores the current sale : there's no on-chain "history" to just read.
 //
 // Disabled for now: its eth_getLogs polling was eating into the RPC quota. Re-enable by
 // uncommenting this function, the useSaleHistory import above, and its render site in App below.
@@ -83,7 +83,7 @@ function shortAddress(address: string): string {
 // }
 
 // Seller-only: arms the next item on this same contract instance. Only ever rendered when the
-// connected wallet matches seller() (see AuctionView below) — that check is a UI convenience, not
+// connected wallet matches seller() (see AuctionView below) : that check is a UI convenience, not
 // the real access control, which is enforced on-chain by startNewSale's `msg.sender == seller`
 // check (NotSeller, see FlashDrop.sol). Anyone forging this form client-side would just get a revert.
 function AdminPanel({
@@ -119,7 +119,7 @@ function AdminPanel({
     parsedDuration !== null &&
     parsedStart > parsedEnd;
 
-  // The current sale is still live — neither bought nor cancelled — so startNewSale would revert
+  // The current sale is still live : neither bought nor cancelled : so startNewSale would revert
   // (see FlashDrop.sol's SaleStillActive check). cancelSale() is the only way out of
   // this state short of waiting for a buyer.
   const active = !sold && !cancelled;
@@ -151,7 +151,7 @@ function AdminPanel({
         {active && (
           <div className="admin-cancel-block">
             <p className="admin-hint">
-              The current sale is still active — cancel it to start a different one, or wait until
+              The current sale is still active : cancel it to start a different one, or wait until
               it sells.
             </p>
             <button type="button" className="admin-cancel-button" onClick={handleCancel} disabled={cancelling}>
@@ -272,7 +272,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
         </div>
       ) : (
         // Connecting has to be reachable regardless of sale state (not just while a sale is
-        // active/unsold) — otherwise a seller landing fresh on an already-sold or already-cancelled
+        // active/unsold) : otherwise a seller landing fresh on an already-sold or already-cancelled
         // sale would have no way to prove they're the seller and see the admin panel at all.
         <button
           type="button"
@@ -290,7 +290,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
           {soldPrice !== null && <p className="sold-price">${formatUsdc(soldPrice)}</p>}
           {buyer && <p className="sold-buyer">Won by {shortAddress(buyer)}</p>}
           <p className="finality-note">
-            Finalized deterministically in under a second — no reorg can change this outcome.
+            Finalized deterministically in under a second : no reorg can change this outcome.
           </p>
         </div>
       ) : cancelled ? (
@@ -302,12 +302,12 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
         <>
           <div className="live-badge">
             <span className="live-dot" />
-            Live auction — price dropping now
+            Live auction : price dropping now
           </div>
 
           <div className="price-display">
             <span className="currency">$</span>
-            <span className="price">{displayedPrice !== null ? formatUsdc(displayedPrice) : "—"}</span>
+            <span className="price">{displayedPrice !== null ? formatUsdc(displayedPrice) : ":"}</span>
             <span className="price-falling-arrow" aria-hidden="true">
               ▼
             </span>
@@ -324,7 +324,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
             </div>
           )}
 
-          {auctionEnded && <p className="ended-note">Price has reached its floor — still available at this price.</p>}
+          {auctionEnded && <p className="ended-note">Price has reached its floor : still available at this price.</p>}
 
           {account && (
             <button className="buy-button" disabled={busy} onClick={buyNow}>
@@ -339,7 +339,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
             <p className="approval-note">
               Your first purchase asks your wallet to let Permit2 (Uniswap's standard transfer
               contract) move your USDC, with no limit. It's a one-time step: later purchases only
-              need a signature. Only sign Permit2 requests on sites you trust — a malicious one could
+              need a signature. Only sign Permit2 requests on sites you trust : a malicious one could
               use that approval to take your USDC. You can revoke it at any time, e.g. on{" "}
               <a href="https://revoke.cash" target="_blank" rel="noopener noreferrer">
                 revoke.cash

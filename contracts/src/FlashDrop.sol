@@ -1,6 +1,6 @@
 // SPDX-License-Identifier: MIT
 // Pinned (not ^0.8.24) so the deployed bytecode always comes from the exact compiler version the
-// test suite ran against — see hardhat.config.ts, which pins the same version and evmVersion.
+// test suite ran against : see hardhat.config.ts, which pins the same version and evmVersion.
 pragma solidity 0.8.24;
 
 import {ISignatureTransfer} from "./interfaces/IPermit2.sol";
@@ -8,13 +8,13 @@ import {ISignatureTransfer} from "./interfaces/IPermit2.sol";
 /// @title FlashDrop
 /// @notice Single-product reverse Dutch auction: the displayed price decays linearly from
 /// `startPrice` to `endPrice` over `duration` seconds, and the first `buy()` that lands wins the
-/// item at whatever price was current at that instant. One sale is active at a time — once it's
+/// item at whatever price was current at that instant. One sale is active at a time : once it's
 /// sold (or cancelled via `cancelSale`), the seller can call `startNewSale` to reuse this same
-/// contract for the next item instead of redeploying (still no concurrent multi-item catalog —
+/// contract for the next item instead of redeploying (still no concurrent multi-item catalog :
 /// see PROJECT_BRIEF.md).
 contract FlashDrop {
     // USDC on Arc is both the ERC-20 interface (6 decimals, used here) and the native gas asset
-    // (18 decimals, same underlying balance) — the two must never be mixed in a calculation. This
+    // (18 decimals, same underlying balance) : the two must never be mixed in a calculation. This
     // fixed address is the ERC-20 interface, confirmed via docs.arc.io / explorer.arc.io Blockscout
     // on 2026-09-17 (see docs/arc-notes/03-adresses-contrats.md); identical on mainnet and testnet.
     address public constant USDC = 0x3600000000000000000000000000000000000000;
@@ -22,7 +22,7 @@ contract FlashDrop {
     // Permit2 is already deployed on Arc (same address on mainnet/testnet, see docs/arc-notes/03).
     // We use it instead of having each buyer approve() this contract directly. With a plain
     // approve(), every new FlashDrop instance would need its own on-chain approval before a first
-    // purchase — an extra transaction, and extra seconds, at exactly the moment the buyer has
+    // purchase : an extra transaction, and extra seconds, at exactly the moment the buyer has
     // decided the price is right and is racing anyone else watching the same drop. With Permit2,
     // the buyer approves Permit2 once (ever, across every contract that uses it), and each
     // purchase after that is authorized by an off-chain EIP-712 signature (no gas, not a
@@ -37,8 +37,8 @@ contract FlashDrop {
     address public immutable seller;
 
     // ---- Storage layout ----
-    // Packed into 2 slots (plus the 2 strings) instead of one 32-byte slot per field, so buy() —
-    // the one call that races other buyers — touches only 2 cold slots and only ever rewrites
+    // Packed into 2 slots (plus the 2 strings) instead of one 32-byte slot per field, so buy() :
+    // the one call that races other buyers : touches only 2 cold slots and only ever rewrites
     // slots that are already non-zero (2 900 gas each instead of 20 000 for a zero -> non-zero
     // write). Field order matters: Solidity packs consecutive fields into the same slot only
     // while they fit, so everything buy() reads or writes is grouped here on purpose.
@@ -50,12 +50,12 @@ contract FlashDrop {
     // Slot 0 (31/32 bytes): who bought, when the sale started, how long it lasts, and its state.
     address public buyer;
     // Seconds since epoch. uint40 is good until the year 36812. This is the block.timestamp at
-    // which the sale started — see currentPrice() for why reading time this way is fine on Arc.
+    // which the sale started : see currentPrice() for why reading time this way is fine on Arc.
     uint40 public startTime;
     uint32 public duration; // seconds, up to ~136 years
     bool public sold;
     // Set by the seller via cancelSale() to pull an active (not-yet-sold) sale without a purchase
-    // ever happening — distinct from `sold` so a cancelled sale never shows up as a completed sale
+    // ever happening : distinct from `sold` so a cancelled sale never shows up as a completed sale
     // (e.g. in the frontend's past-sales history, which is built from Sold events only) and so
     // buy() can tell "someone already bought this" apart from "the seller pulled this item" when
     // deciding what to revert with.
@@ -68,7 +68,7 @@ contract FlashDrop {
     uint64 public endPrice;
     uint64 public soldPrice;
     // Incremented by every _startSale (so the first sale is 1, never 0). buy() requires the
-    // caller to name the sale it means to buy — see buy() for why that matters on a reusable
+    // caller to name the sale it means to buy : see buy() for why that matters on a reusable
     // contract.
     uint64 public saleId;
 
@@ -81,8 +81,8 @@ contract FlashDrop {
     string public itemDescription;
 
     // Every event carries the (indexed) saleId it belongs to, so an off-chain history can pair a
-    // Sold/SaleCancelled log with the SaleStarted log of the same item directly — by id, with an
-    // eth_getLogs topic filter if needed — rather than inferring it from log order. Amounts and
+    // Sold/SaleCancelled log with the SaleStarted log of the same item directly : by id, with an
+    // eth_getLogs topic filter if needed : rather than inferring it from log order. Amounts and
     // times stay uint256 in events: logs cost no storage, so there's nothing to gain by narrowing.
     event Sold(uint64 indexed saleId, address indexed buyer, uint256 price, uint256 timestamp);
     event SaleStarted(
@@ -124,7 +124,7 @@ contract FlashDrop {
 
     /// @notice Reuses this contract for a new item once the current one has sold or been
     /// cancelled, instead of deploying a fresh instance per item. Only the original seller may
-    /// call this, and only once the current sale is no longer active — an active, not-yet-sold,
+    /// call this, and only once the current sale is no longer active : an active, not-yet-sold,
     /// not-yet-cancelled sale can't be interrupted or replaced directly (see cancelSale below).
     function startNewSale(
         string memory _itemName,
@@ -144,7 +144,7 @@ contract FlashDrop {
 
     /// @notice Pulls the current sale before anyone has bought it, so the seller can start a
     /// different one instead (e.g. wrong price, wrong item, changed their mind). Only the original
-    /// seller may call this, and only while the sale is still genuinely active — once it's sold
+    /// seller may call this, and only while the sale is still genuinely active : once it's sold
     /// there's nothing left to cancel, and it can't be cancelled twice.
     function cancelSale() external {
         if (msg.sender != seller) revert NotSeller();
@@ -178,7 +178,7 @@ contract FlashDrop {
     /// @notice Current price, decaying linearly from startPrice to endPrice over `duration`.
     /// Reading `block.timestamp` here is safe: this only needs an approximate, non-decreasing wall
     /// clock to compute a smooth price curve, and Arc's timestamp guarantees exactly that (it never
-    /// goes backwards). This is deliberately NOT using block.timestamp to order events or blocks —
+    /// goes backwards). This is deliberately NOT using block.timestamp to order events or blocks :
     /// that would be the documented Arc pitfall, since sub-second blocks on Arc can share the same
     /// timestamp; ordering here is decided by transaction inclusion order in `buy()`, not by time.
     function currentPrice() public view returns (uint256) {
@@ -204,11 +204,11 @@ contract FlashDrop {
     function buy(uint64 expectedSaleId, ISignatureTransfer.PermitTransferFrom calldata permit, bytes calldata signature)
         external
     {
-        // The Permit2 signature binds this contract, a nonce, a deadline and a max amount — but
+        // The Permit2 signature binds this contract, a nonce, a deadline and a max amount : but
         // not *which* sale, since the same contract is reused across items. Without this check, a
         // buyer who signed for item A, then took a while to confirm in their wallet, could land
         // their transaction after A sold (or was cancelled) and the seller armed item B at a
-        // price under their signed ceiling — buying B, which they never chose. On Arc the whole
+        // price under their signed ceiling : buying B, which they never chose. On Arc the whole
         // "A sold -> startNewSale(B)" sequence can finalize in about a second, so this window is
         // real, not theoretical. Checked first so that case reverts with the clearest reason.
         //
@@ -228,7 +228,7 @@ contract FlashDrop {
         // this is the actual "first past the post" decision point of the auction. Arc has no public
         // mempool (eth_subscribe("newPendingTransactions") is disabled at the RPC level), so no
         // third-party bot can see this transaction before it finalizes and race a copy of it in
-        // with a higher priority fee — front-running, the well-documented form of MEV that hits
+        // with a higher priority fee : front-running, the well-documented form of MEV that hits
         // time-sensitive sales on chains with a public mempool, structurally cannot happen here.
         // (Ordering within a block is still up to Arc's validators; what's removed is outside
         // observers.) Combined with Arc's deterministic sub-second finality, whichever buy()

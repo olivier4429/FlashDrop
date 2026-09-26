@@ -20,7 +20,7 @@ current one is sold or cancelled:
 - `currentPrice()` decays linearly between the two over that duration.
 - `buy()` charges whoever calls it first the price shown at that exact moment, and closes the sale.
 - Once sold, the seller can arm the *same* contract for the next item with `startNewSale(...)`
-  instead of deploying a new one — see [Reusing the contract](#reusing-the-contract-for-a-new-item).
+  instead of deploying a new one : see [Reusing the contract](#reusing-the-contract-for-a-new-item).
 
 ## Why Arc, specifically
 
@@ -29,7 +29,7 @@ not just theoretically neat:
 
 - **No public mempool.** Arc disables pending-transaction visibility at the RPC level
   (`eth_subscribe("newPendingTransactions")` is not available). There is structurally nothing for
-  a front-running bot to see and copy before a `buy()` transaction finalizes — the attack class
+  a front-running bot to see and copy before a `buy()` transaction finalizes : the attack class
   doesn't apply here, not because it was mitigated, but because the data it depends on isn't
   exposed. (This removes third-party front-running; transaction ordering within a block is still
   up to Arc's validators.)
@@ -37,7 +37,7 @@ not just theoretically neat:
   ambiguity about who bought first at what price, and no reorg risk that could change the winner
   after the fact.
 
-Worth being precise about what this pitch is *not*: it isn't "the transaction is irreversible" —
+Worth being precise about what this pitch is *not*: it isn't "the transaction is irreversible" :
 every chain has that property once a transaction is confirmed, Arc included. What's actually
 unique here is *how fast and how deterministically* that irreversibility is reached, combined with
 having no pre-finality visibility into pending purchases at all.
@@ -47,18 +47,18 @@ and testnet) so a purchase is a single on-chain transaction: the buyer signs an 
 message authorizing "up to X USDC" for this contract, and `buy()` pulls the current price in one
 transaction. The only on-chain approval is a one-time USDC → Permit2 approval, reused across every
 FlashDrop instance and every other Permit2-based app. Without it, each new contract would need its
-own `approve()` transaction before a first purchase — an extra transaction at exactly the moment
+own `approve()` transaction before a first purchase : an extra transaction at exactly the moment
 the buyer is racing anyone else watching the same drop.
 
 More background on Arc itself (network fundamentals, the USDC-as-gas model, Permit2, the build
-tooling) lives in `docs/arc-notes/`, and the fuller project history — ideas considered and dropped,
-open decisions, verified addresses — lives in `PROJECT_BRIEF.md`.
+tooling) lives in `docs/arc-notes/`, and the fuller project history : ideas considered and dropped,
+open decisions, verified addresses : lives in `PROJECT_BRIEF.md`.
 
 ## Project layout
 
 ```
-contracts/   Solidity contract (Hardhat) — FlashDrop.sol, tests, deploy/admin scripts
-frontend/    React + Vite + viem app — live price countdown and the buy flow
+contracts/   Solidity contract (Hardhat) : FlashDrop.sol, tests, deploy/admin scripts
+frontend/    React + Vite + viem app : live price countdown and the buy flow
 docs/        Background research notes on Arc
 ```
 
@@ -100,10 +100,10 @@ profile, which has the optimizer off. Prices must fit in a `uint64` and the dura
 `uint32` (the contract's parameter types).
 
 Prices are USDC amounts in 6-decimal units (`100000000` = 100 USDC). Use `--network arcMainnet`
-for a real deploy (needs a wallet funded with real USDC — there is no mainnet faucet), or
+for a real deploy (needs a wallet funded with real USDC : there is no mainnet faucet), or
 `--network hardhatMainnet` for a quick local dry run with no persistent state.
 
-Note the deployed contract address printed at the end — you'll need it for the frontend.
+Note the deployed contract address printed at the end : you'll need it for the frontend.
 
 ### Reusing the contract for a new item
 
@@ -118,7 +118,7 @@ FLASHDROP_ADDRESS=0x... ITEM_NAME="..." ITEM_DESCRIPTION="..." \
 ```
 
 `itemName`/`itemDescription` are stored on-chain (not just in frontend config) precisely because
-the same contract gets reused across items this way — the frontend always shows whatever item is
+the same contract gets reused across items this way : the frontend always shows whatever item is
 currently live, with no risk of a stale title left over from before this call.
 
 This reverts if called by anyone other than the seller, or if the current sale is still active (neither sold nor cancelled).
@@ -139,19 +139,19 @@ VITE_FLASHDROP_ADDRESS=0x...          # the deployed contract address
 VITE_CHAIN_ID=5042002                 # which network is pre-selected: 5042002 = Testnet, 5042 = Mainnet, 31337 = local
 ```
 
-The item's title and description aren't set here — the frontend reads `itemName`/`itemDescription`
+The item's title and description aren't set here : the frontend reads `itemName`/`itemDescription`
 live from the contract (see [Deploying](#deploying) above), so they always match whatever item the
 seller currently has live.
 
 Under `npm run dev`, the app has a network dropdown (top-right of the card) to switch between Arc
 Testnet, Arc Mainnet and the local Hardhat node at runtime (production builds hide it and stay on
-`VITE_CHAIN_ID`, see below) — it changes which chain the wallet/RPC talks to, using the
+`VITE_CHAIN_ID`, see below) : it changes which chain the wallet/RPC talks to, using the
 same `VITE_FLASHDROP_ADDRESS` regardless of which one is selected (there's only ever one active
 deployment being tested at a time in this workflow; update that one value yourself if you redeploy
 to a different network).
 
 Open the app, pick a network, click **Connect wallet** and pick the account you funded with
-testnet USDC — the app itself prompts your wallet to add/switch to that network automatically, no
+testnet USDC : the app itself prompts your wallet to add/switch to that network automatically, no
 manual wallet network setup needed. Click **Buy now**: the first purchase ever from that wallet
 triggers a one-time USDC → Permit2 approval, then every purchase after that (on this drop or any
 future one) is just a signature and a transaction.
@@ -167,7 +167,7 @@ address). Full checklist, environment variables and security headers:
 
 ## Testing locally without testnet funds
 
-You can exercise the whole flow — including a real wallet buy — against a local node, without
+You can exercise the whole flow : including a real wallet buy : against a local node, without
 needing Arc testnet USDC. The local node has no real USDC/Permit2/Multicall3 deployed at Arc's
 addresses, so a setup script places them there first (a mock USDC, plus the real Permit2 and
 Multicall3 bytecode):
@@ -187,7 +187,7 @@ ITEM_NAME="Vintage Leather Jacket" ITEM_DESCRIPTION="Size M, one owner, no visib
 Then set `VITE_FLASHDROP_ADDRESS` in `frontend/.env.local` to the deployed address, pick
 "Local (Hardhat node)" from the app's network dropdown, add a `http://127.0.0.1:8545` / chain ID
 `31337` network to your wallet, and import Hardhat's well-known test account #0 private key
-(`0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` — public, test-only, never
+(`0xac0974bec39a17e36ba4a6b4d238ff944bacb478cbed5efcae784d7bf4f2ff80` : public, test-only, never
 used with real funds) to act as the buyer; `setupLocalMocks.ts` mints it test USDC by default.
 
 ## Security note for buyers: the one-time Permit2 approval
@@ -207,7 +207,7 @@ Buy click. In practice:
 ## Troubleshooting
 
 **Frontend says "Could not read a FlashDrop contract at 0x... on Arc Testnet/Mainnet" even though
-the address, network and `.env.local` all look correct.** Open the browser DevTools Console — if
+the address, network and `.env.local` all look correct.** Open the browser DevTools Console : if
 you see `ERR_BLOCKED_BY_CLIENT` on the RPC request, that's not a network, DNS, CORS or config
 issue: it means a browser-side blocker is silently dropping the request to `rpc.testnet.arc.io` /
 `rpc.mainnet.arc.io` before it ever leaves the browser. Confirmed cause in practice: **Brave
@@ -215,10 +215,10 @@ Shields** (Brave's built-in ad/tracker blocker, on by default for every site) bl
 call. Fix: click the Shields icon in the address bar for this site and turn Shields down for it
 (or lower "Trackers & ads blocking" from Aggressive to Standard). The same class of issue can come
 from other browsers' ad-blocker/privacy extensions (uBlock Origin, Privacy Badger, an antivirus web
-shield, etc.) — test in a private/incognito window with extensions disabled to confirm, then
+shield, etc.) : test in a private/incognito window with extensions disabled to confirm, then
 whitelist the RPC domain instead of leaving blocking off entirely.
 
-## Key addresses (Arc mainnet and testnet — identical on both)
+## Key addresses (Arc mainnet and testnet : identical on both)
 
 | Contract | Address |
 |---|---|

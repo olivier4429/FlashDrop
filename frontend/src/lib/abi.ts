@@ -92,7 +92,7 @@ export const flashDropAbi = [
       { name: "timestamp", type: "uint256", indexed: false },
     ],
   },
-  // FlashDrop's own custom errors — viem needs them in the ABI to decode a revert into a name
+  // FlashDrop's own custom errors : viem needs them in the ABI to decode a revert into a name
   // (and arguments) instead of an opaque 4-byte selector.
   { type: "error", name: "NotSeller", inputs: [] },
   { type: "error", name: "SaleStillActive", inputs: [] },
@@ -119,7 +119,7 @@ export const flashDropAbi = [
   { type: "error", name: "InvalidPriceRange", inputs: [] },
   { type: "error", name: "ZeroDuration", inputs: [] },
   // Permit2's errors, which bubble up unchanged through buy() (FlashDrop doesn't catch them).
-  // Not part of FlashDrop's compiled ABI — mirrored from ISignatureTransfer in
+  // Not part of FlashDrop's compiled ABI : mirrored from ISignatureTransfer in
   // contracts/src/interfaces/IPermit2.sol, where their provenance is documented.
   { type: "error", name: "SignatureExpired", inputs: [{ name: "signatureDeadline", type: "uint256" }] },
   { type: "error", name: "InvalidNonce", inputs: [] },

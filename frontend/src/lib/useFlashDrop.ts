@@ -24,7 +24,7 @@ export interface SaleParams {
   duration: bigint; // seconds
   // Which sale these params belong to (FlashDrop increments it on every startNewSale). Passed back
   // into buy() so the contract rejects the purchase if the item was replaced after the buyer
-  // looked at it — see FlashDrop.buy().
+  // looked at it : see FlashDrop.buy().
   saleId: bigint;
 }
 
@@ -50,7 +50,7 @@ export interface NewSaleInput {
 
 // Mirrors FlashDrop.currentPrice()'s linear decay so the UI can tick every animation frame
 // without hitting the RPC on every render. This is only a client-side visual approximation of
-// wall-clock time — the price actually charged is whatever the contract computes from
+// wall-clock time : the price actually charged is whatever the contract computes from
 // block.timestamp at the moment `buy()` is included on-chain, not whatever this function returns.
 function priceAtElapsed(sale: SaleParams, elapsedSeconds: bigint): bigint {
   if (elapsedSeconds >= sale.duration) return sale.endPrice;
@@ -69,13 +69,13 @@ function randomNonce(): bigint {
 type ArcWalletClient = ReturnType<typeof createWalletClient>;
 type ArcPublicClient = ReturnType<typeof createPublicClient>;
 
-// Plain-language text for each custom error a write can revert with — FlashDrop's own, plus
+// Plain-language text for each custom error a write can revert with : FlashDrop's own, plus
 // Permit2's, which bubble up unchanged through buy(). Keyed by error name, which viem decodes from
 // the revert data using the error entries in abi.ts.
 const REVERT_MESSAGES: Record<string, string> = {
   NotSeller: "Only the seller can do this.",
-  SaleStillActive: "The current sale is still active — cancel it first, or wait until it sells.",
-  AlreadySold: "Too late — someone else bought this item first. You were not charged.",
+  SaleStillActive: "The current sale is still active : cancel it first, or wait until it sells.",
+  AlreadySold: "Too late : someone else bought this item first. You were not charged.",
   AlreadyCancelled: "This sale was already cancelled.",
   SaleIsCancelled: "The seller cancelled this sale. You were not charged.",
   SaleChanged:
@@ -106,7 +106,7 @@ function describeError(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
 
-// waitForTransactionReceipt resolves normally for a transaction that was mined but reverted — it
+// waitForTransactionReceipt resolves normally for a transaction that was mined but reverted : it
 // does not throw. That matters most for buy(): the wallet's gas estimate can pass, and the
 // transaction still revert because another buyer's purchase was included first. Without this
 // check the UI would show "Purchased!" to the buyer who lost the race. `replay` re-runs the same
@@ -134,7 +134,7 @@ async function ensureArcChain(wallet: ArcWalletClient, chain: Chain) {
   try {
     await wallet.switchChain({ id: chain.id });
   } catch {
-    // Most wallets don't have a network as new as Arc pre-configured — add it, then switch.
+    // Most wallets don't have a network as new as Arc pre-configured : add it, then switch.
     // Arc's native currency is USDC itself (the 18-decimal native interface), not a volatile
     // token; see arcChain.ts for why that's still a completely ordinary `defineChain` call.
     await wallet.addChain({ chain });
@@ -147,11 +147,11 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
 
   const [account, setAccount] = useState<Address | null>(null);
   const walletClientRef = useRef<ArcWalletClient | null>(null);
-  // Tracks `sold` across polls (independent of React state staleness inside the poll's closure —
+  // Tracks `sold` across polls (independent of React state staleness inside the poll's closure :
   // see below) so a true->false transition (a new sale just got armed via startNewSale) can be
   // told apart from "still unsold". Used only to reset the connected wallet's own buy status: this
   // is what stops the buy button reading "Purchased!" for a new item after the same wallet bought
-  // a previous one in this session — see the reset below.
+  // a previous one in this session : see the reset below.
   const prevSoldRef = useRef<boolean | null>(null);
 
   const [seller, setSeller] = useState<Address | null>(null);
@@ -166,7 +166,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   const [adminStatus, setAdminStatus] = useState<AdminStatus>("idle");
   const [adminError, setAdminError] = useState<string | null>(null);
   // Which admin action `adminStatus === "done"` refers to. Deliberately NOT inferred from the
-  // polled `sold`/`cancelled` state at display time — that poll can lag up to 750ms behind the tx
+  // polled `sold`/`cancelled` state at display time : that poll can lag up to 750ms behind the tx
   // actually confirming, so right after starting a new sale (which resets `cancelled` on-chain),
   // the frontend could still be showing a stale `cancelled === true` for a moment and mislabel the
   // success message "Sale cancelled." instead of "New sale started.".
@@ -177,7 +177,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   const [readError, setReadError] = useState<string | null>(null);
 
   // Switching network or contract (the dropdown in App.tsx) invalidates any existing wallet
-  // connection — it was bound to a different chain, so force a fresh "Connect wallet" instead of
+  // connection : it was bound to a different chain, so force a fresh "Connect wallet" instead of
   // silently continuing to sign for the wrong network. Also drop any sale data read from whichever
   // network/contract was previously selected, so a failed read on the new one shows a clear error
   // instead of a frozen, stale price left over from before the switch.
@@ -193,24 +193,24 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   }, [chain, contractAddress]);
 
   // Polls the full sale state, including itemName/itemDescription/startPrice/endPrice/startTime/
-  // duration — none of these are truly immutable: the seller can reuse this same contract for a
+  // duration : none of these are truly immutable: the seller can reuse this same contract for a
   // new item via startNewSale once the current one sells (see FlashDrop.sol), so the frontend has
   // to keep re-reading them rather than fetching once and assuming they're fixed forever. This is
   // also why the item's title/description live on-chain at all rather than only in frontend
-  // config — a frontend-only value could otherwise show the previous item's name next to the new
+  // config : a frontend-only value could otherwise show the previous item's name next to the new
   // item's price right after a startNewSale.
   //
   // Batched into a single `multicall` (Multicall3, deployed on Arc at the standard canonical
-  // address, configured per chain in arcChain.ts — viem has no global default; see
+  // address, configured per chain in arcChain.ts : viem has no global default; see
   // docs/arc-notes/03-adresses-contrats.md) instead of 12 separate eth_call
   // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with many
   // parallel requests every cycle, which surfaced as a misleading "no contract found" error even
-  // though the contract and address were both correct — one request per poll avoids that entirely.
+  // though the contract and address were both correct : one request per poll avoids that entirely.
   //
   // This self-schedules its next check (setTimeout, not setInterval) instead of polling forever at
   // a single fixed rate, so it only spends RPC calls when a fast response actually matters:
   //   - FAST (750ms) whenever the sale is unsold (including a cancelled one, which isn't
-  //     distinguished here) — this is what lets the UI flip to "sold" almost as fast as the
+  //     distinguished here) : this is what lets the UI flip to "sold" almost as fast as the
   //     winning transaction lands, demonstrating Arc's speed.
   //   - SLOW (3s) once sold (waiting for a possible startNewSale), or after repeated read failures
   //     (a wrong address/network isn't going to fix itself by retrying faster).
@@ -255,7 +255,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
 
       if (results === null) {
         consecutiveFailures += 1;
-        // Don't flip to an error on a single transient blip (e.g. a brief RPC hiccup) — only after
+        // Don't flip to an error on a single transient blip (e.g. a brief RPC hiccup) : only after
         // a few polls in a row have failed, since a real "wrong address/network" case stays failed
         // indefinitely anyway.
         if (consecutiveFailures >= 3) {
@@ -285,8 +285,8 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       ] = results;
       setReadError(null);
       setSeller(sellerAddress);
-      // startTime (uint40) and duration (uint32) come back from viem as plain numbers — it only
-      // uses bigint for integer types wider than 48 bits — so widen them to match the rest.
+      // startTime (uint40) and duration (uint32) come back from viem as plain numbers : it only
+      // uses bigint for integer types wider than 48 bits : so widen them to match the rest.
       setSale({
         itemName,
         itemDescription,
@@ -344,7 +344,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setStatus("connecting");
     try {
       const injected = (window as { ethereum?: Parameters<typeof custom>[0] }).ethereum;
-      if (!injected) throw new Error("No wallet found — install MetaMask or a similar Arc-compatible wallet");
+      if (!injected) throw new Error("No wallet found : install MetaMask or a similar Arc-compatible wallet");
       const wallet = createWalletClient({ chain, transport: custom(injected) });
       const [address] = await wallet.requestAddresses();
       await ensureArcChain(wallet, chain);
@@ -357,7 +357,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     }
   }, [chain]);
 
-  // Forgets the connected wallet on this page only — there's no way for a dApp to revoke a
+  // Forgets the connected wallet on this page only : there's no way for a dApp to revoke a
   // wallet extension's own connection permission (that's controlled entirely by the wallet, e.g.
   // MetaMask's "Connected sites"), so this just drops the local session and returns the UI to
   // "Connect wallet". Also clears admin state, since starting/cancelling a sale needs a connected
@@ -398,7 +398,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     const onChainChanged = (chainIdHex: unknown) => {
       if (Number(chainIdHex) === chain.id) return;
       disconnect();
-      setError(`Your wallet switched away from ${chain.name} — reconnect to continue.`);
+      setError(`Your wallet switched away from ${chain.name} : reconnect to continue.`);
     };
 
     injected.on("accountsChanged", onAccountsChanged);
@@ -447,7 +447,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
       });
 
       // One-time, ever-lasting setup: approve Permit2 to move this wallet's USDC. This is the
-      // ONLY on-chain approval a buyer ever makes — every purchase after this, on this or any
+      // ONLY on-chain approval a buyer ever makes : every purchase after this, on this or any
       // other FlashDrop instance, needs just an off-chain signature (see the `signTypedData` call
       // below, and FlashDrop.sol's comments on why Permit2 matters for a live decreasing price).
       if (allowance < sale.startPrice) {
@@ -466,7 +466,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
 
       setStatus("signing");
       const elapsedNow = BigInt(Math.max(0, Math.floor(Date.now() / 1000) - Number(sale.startTime)));
-      // Sign for the price as of a few seconds "earlier" than what's displayed right now — a small
+      // Sign for the price as of a few seconds "earlier" than what's displayed right now : a small
       // safety margin. The price only ever goes down, so this alone can't cause an overpay: the
       // contract still charges whatever currentPrice() actually is when buy() lands, never more
       // than this signed ceiling. Without the margin, a few seconds of network latency or client
@@ -528,7 +528,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   }, [account, sale, publicClient, contractAddress, chain]);
 
   // Seller-only: arms the next item on this same contract instance once the current sale has sold
-  // or been cancelled (see cancelSale below). Unlike buy(), this is a plain write — no Permit2
+  // or been cancelled (see cancelSale below). Unlike buy(), this is a plain write : no Permit2
   // signature involved, since it doesn't move any funds. The contract itself enforces
   // `msg.sender == seller` and `sold || cancelled` (see FlashDrop.sol), so this call will revert
   // if none of that holds; this UI is only ever shown to the connected seller as a convenience,
