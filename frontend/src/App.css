@@ -295,6 +295,45 @@ body {
   margin-bottom: 28px;
 }
 
+.next-drop {
+  margin: -8px 0 24px;
+  padding: 14px 16px;
+  border-radius: 12px;
+  background: #f5f7fb;
+  border: 1px solid #e1e5ee;
+  text-align: center;
+}
+
+.next-drop-label {
+  margin: 0 0 4px;
+  font-size: 12px;
+  text-transform: uppercase;
+  letter-spacing: 1px;
+  color: #8b93a7;
+}
+
+.next-drop-countdown {
+  margin: 0 0 6px;
+  font-size: 26px;
+  font-weight: 800;
+  color: #12141c;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+  font-variant-numeric: tabular-nums;
+}
+
+.next-drop-price {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: #0f9d74;
+  font-family: ui-monospace, "SF Mono", Consolas, monospace;
+}
+
+.next-drop-step {
+  font-weight: 400;
+  color: #8b93a7;
+}
+
 .ended-note {
   font-size: 13px;
   color: #b06b0c;
@@ -379,6 +418,42 @@ body {
   font-size: 12px;
   color: #8b93a7;
   line-height: 1.5;
+}
+
+.relaunch-block {
+  margin-top: 24px;
+  padding-top: 20px;
+  border-top: 1px solid #e1e5ee;
+}
+
+.relaunch-button {
+  width: 100%;
+  padding: 14px;
+  font-size: 16px;
+  font-weight: 700;
+  color: #0f9d74;
+  background: transparent;
+  border: 2px solid #0f9d74;
+  border-radius: 12px;
+  cursor: pointer;
+  transition: transform 0.1s ease, background 0.1s ease;
+}
+
+.relaunch-button:hover:not(:disabled) {
+  background: rgba(15, 157, 116, 0.08);
+  transform: translateY(-1px);
+}
+
+.relaunch-button:disabled {
+  opacity: 0.55;
+  cursor: default;
+}
+
+.relaunch-hint {
+  margin: 10px 0 0;
+  font-size: 12px;
+  line-height: 1.5;
+  color: #8b93a7;
 }
 
 .cancelled-panel {

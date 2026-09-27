@@ -31,14 +31,18 @@ const startPrice = envUint("START_PRICE"); // USDC, 6 decimals
 const endPrice = envUint("END_PRICE"); // USDC, 6 decimals
 // uint32 on-chain, which viem types as a plain number rather than a bigint.
 const duration = Number(envUint("DURATION_SECONDS"));
+// Seconds each price level lasts (uint32, 1..DURATION_SECONDS): the price drops once per step
+// instead of every second, so the frontend can count down to the next drop. Required rather than
+// defaulted, so a long sale can't silently fall back to per-second decay.
+const stepDuration = Number(envUint("STEP_SECONDS"));
 
 const { viem } = await network.create();
 const drop = await viem.getContractAt("FlashDrop", contractAddress);
 
-const hash = await drop.write.startNewSale([itemName, itemDescription, startPrice, endPrice, duration]);
+const hash = await drop.write.startNewSale([itemName, itemDescription, startPrice, endPrice, duration, stepDuration]);
 const publicClient = await viem.getPublicClient();
 await publicClient.waitForTransactionReceipt({ hash });
 
 console.log("New sale started on", contractAddress);
 console.log("itemName:", itemName, "itemDescription:", itemDescription);
-console.log("startPrice:", startPrice.toString(), "endPrice:", endPrice.toString(), "duration:", duration.toString());
+console.log("startPrice:", startPrice.toString(), "endPrice:", endPrice.toString(), "duration:", duration.toString(), "step:", stepDuration.toString());

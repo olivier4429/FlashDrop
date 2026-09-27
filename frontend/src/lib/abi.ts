@@ -14,6 +14,7 @@ export const flashDropAbi = [
   { type: "function", name: "buyer", stateMutability: "view", inputs: [], outputs: [{ type: "address" }] },
   { type: "function", name: "soldPrice", stateMutability: "view", inputs: [], outputs: [{ type: "uint64" }] },
   { type: "function", name: "saleId", stateMutability: "view", inputs: [], outputs: [{ type: "uint64" }] },
+  { type: "function", name: "stepDuration", stateMutability: "view", inputs: [], outputs: [{ type: "uint32" }] },
   { type: "function", name: "currentPrice", stateMutability: "view", inputs: [], outputs: [{ type: "uint256" }] },
   {
     type: "function",
@@ -51,12 +52,20 @@ export const flashDropAbi = [
       { name: "_startPrice", type: "uint64" },
       { name: "_endPrice", type: "uint64" },
       { name: "_duration", type: "uint32" },
+      { name: "_stepDuration", type: "uint32" },
     ],
     outputs: [],
   },
   {
     type: "function",
     name: "cancelSale",
+    stateMutability: "nonpayable",
+    inputs: [],
+    outputs: [],
+  },
+  {
+    type: "function",
+    name: "relaunchSale",
     stateMutability: "nonpayable",
     inputs: [],
     outputs: [],
@@ -82,6 +91,7 @@ export const flashDropAbi = [
       { name: "endPrice", type: "uint256", indexed: false },
       { name: "startTime", type: "uint256", indexed: false },
       { name: "duration", type: "uint256", indexed: false },
+      { name: "stepDuration", type: "uint256", indexed: false },
     ],
   },
   {
@@ -118,6 +128,7 @@ export const flashDropAbi = [
   },
   { type: "error", name: "InvalidPriceRange", inputs: [] },
   { type: "error", name: "ZeroDuration", inputs: [] },
+  { type: "error", name: "InvalidStepDuration", inputs: [] },
   // Permit2's errors, which bubble up unchanged through buy() (FlashDrop doesn't catch them).
   // Not part of FlashDrop's compiled ABI : mirrored from ISignatureTransfer in
   // contracts/src/interfaces/IPermit2.sol, where their provenance is documented.

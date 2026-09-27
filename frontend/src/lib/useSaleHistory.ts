@@ -25,6 +25,7 @@ const saleStartedEvent = {
     { name: "endPrice", type: "uint256", indexed: false },
     { name: "startTime", type: "uint256", indexed: false },
     { name: "duration", type: "uint256", indexed: false },
+    { name: "stepDuration", type: "uint256", indexed: false },
   ],
 } as const;
 

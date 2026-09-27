@@ -40,6 +40,33 @@ function parseDurationInput(value: string): bigint | null {
   return seconds > 0n && seconds <= MAX_UINT32 ? seconds : null;
 }
 
+// "3d 04h 12m 08s", dropping leading zero units ("12m 08s"), for the next-drop countdown.
+function formatCountdown(ms: number): string {
+  const total = Math.ceil(ms / 1000);
+  const d = Math.floor(total / 86400);
+  const h = Math.floor((total % 86400) / 3600);
+  const m = Math.floor((total % 3600) / 60);
+  const sec = total % 60;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  if (d > 0) return `${d}d ${pad(h)}h ${pad(m)}m ${pad(sec)}s`;
+  if (h > 0) return `${h}h ${pad(m)}m ${pad(sec)}s`;
+  if (m > 0) return `${m}m ${pad(sec)}s`;
+  return `${sec}s`;
+}
+
+// "hour", "6 hours", "day", "30 seconds" : for "price drops every …".
+function formatStep(seconds: bigint): string {
+  const units: [number, string][] = [[604800, "week"], [86400, "day"], [3600, "hour"], [60, "minute"], [1, "second"]];
+  const n = Number(seconds);
+  for (const [size, name] of units) {
+    if (n % size === 0) {
+      const count = n / size;
+      return count === 1 ? name : `${count} ${name}s`;
+    }
+  }
+  return `${n} seconds`;
+}
+
 function shortAddress(address: string): string {
   return `${address.slice(0, 6)}…${address.slice(-4)}`;
 }
@@ -97,7 +124,14 @@ function AdminPanel({
 }: {
   sold: boolean;
   cancelled: boolean;
-  onStartNewSale: (input: { itemName: string; itemDescription: string; startPrice: bigint; endPrice: bigint; durationSeconds: bigint }) => void;
+  onStartNewSale: (input: {
+    itemName: string;
+    itemDescription: string;
+    startPrice: bigint;
+    endPrice: bigint;
+    durationSeconds: bigint;
+    stepSeconds: bigint;
+  }) => void;
   onCancelSale: () => void;
   adminStatus: "idle" | "starting" | "cancelling" | "done" | "error";
   adminError: string | null;
@@ -108,16 +142,20 @@ function AdminPanel({
   const [startPrice, setStartPrice] = useState("");
   const [endPrice, setEndPrice] = useState("");
   const [durationSeconds, setDurationSeconds] = useState("");
+  const [stepSeconds, setStepSeconds] = useState("");
 
   const parsedStart = parseUsdcInput(startPrice);
   const parsedEnd = parseUsdcInput(endPrice);
   const parsedDuration = parseDurationInput(durationSeconds);
+  const parsedStep = parseDurationInput(stepSeconds);
   const formValid =
     itemName.trim() !== "" &&
     parsedStart !== null &&
     parsedEnd !== null &&
     parsedDuration !== null &&
-    parsedStart > parsedEnd;
+    parsedStep !== null &&
+    parsedStart > parsedEnd &&
+    parsedStep <= parsedDuration;
 
   // The current sale is still live : neither bought nor cancelled : so startNewSale would revert
   // (see FlashDrop.sol's SaleStillActive check). cancelSale() is the only way out of
@@ -136,6 +174,7 @@ function AdminPanel({
       startPrice: parsedStart,
       endPrice: parsedEnd,
       durationSeconds: parsedDuration,
+      stepSeconds: parsedStep,
     });
   };
 
@@ -183,14 +222,21 @@ function AdminPanel({
               <input type="number" min="0" step="0.01" value={endPrice} onChange={(e) => setEndPrice(e.target.value)} placeholder="10" />
             </label>
           </div>
-          <label>
-            Duration (seconds)
-            <input type="number" min="1" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} placeholder="300" />
-          </label>
+          <div className="admin-form-row">
+            <label>
+              Duration (seconds)
+              <input type="number" min="1" step="1" value={durationSeconds} onChange={(e) => setDurationSeconds(e.target.value)} placeholder="6048000" />
+            </label>
+            <label>
+              Price drop every (seconds)
+              <input type="number" min="1" step="1" value={stepSeconds} onChange={(e) => setStepSeconds(e.target.value)} placeholder="3600" />
+            </label>
+          </div>
           {startSubmittable && !formValid && (
             <p className="admin-hint">
-              Fill in an item name, a start price above the end price (up to 6 decimals), and a
-              whole number of seconds for the duration to enable this.
+              Fill in an item name, a start price above the end price (up to 6 decimals), a whole
+              number of seconds for the duration, and a drop interval no longer than the duration to
+              enable this.
             </p>
           )}
           <button className="admin-submit" type="submit" disabled={!formValid || !startSubmittable || starting}>
@@ -203,6 +249,40 @@ function AdminPanel({
         </form>
       </div>
     </details>
+  );
+}
+
+// Demo mode: once a round has sold or reached its floor price, any visitor can put the next one
+// on sale, so testers of the public mainnet demo never have to wait for the seller. Not
+// seller-gated like AdminPanel, because FlashDrop.relaunchSale() itself is permissionless (it only
+// replays the seller's own parameters, and refuses a live or cancelled round : see FlashDrop.sol).
+function RelaunchBlock({
+  connected,
+  onRelaunch,
+  relaunchStatus,
+  relaunchError,
+}: {
+  connected: boolean;
+  onRelaunch: () => void;
+  relaunchStatus: "idle" | "relaunching" | "error";
+  relaunchError: string | null;
+}) {
+  const relaunching = relaunchStatus === "relaunching";
+  return (
+    <div className="relaunch-block">
+      {connected ? (
+        <button type="button" className="relaunch-button" onClick={onRelaunch} disabled={relaunching}>
+          {relaunching ? "Listing the next one…" : "↻ List the next one"}
+        </button>
+      ) : (
+        <p className="relaunch-hint">Connect a wallet to list the next one and try it yourself.</p>
+      )}
+      <p className="relaunch-hint">
+        Demo mode: once a listing has sold or hit its floor price, anyone can put the next one on
+        sale, back at the start price. It only costs the transaction's gas.
+      </p>
+      {relaunchError && <p className="error-message">{relaunchError}</p>}
+    </div>
   );
 }
 
@@ -220,6 +300,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
     sale,
     displayedPrice,
     auctionEnded,
+    nextDrop,
     sold,
     cancelled,
     buyer,
@@ -229,6 +310,9 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
     buyNow,
     readError,
     needsPermit2Approval,
+    relaunch,
+    relaunchStatus,
+    relaunchError,
   } = useFlashDrop(contractAddress, chain);
 
   if (readError) {
@@ -260,7 +344,10 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
 
   return (
     <>
-      <h1>{sale?.itemName || FALLBACK_PRODUCT_NAME}</h1>
+      {/* Each round is shown as its own numbered listing: relaunchSale re-arms the same item, so
+          without the number a relaunch after a purchase would read as one house sold twice.
+          saleId comes from the same multicall as itemName, so the two can never be out of sync. */}
+      <h1>{sale ? `${sale.itemName} #${sale.saleId}` : FALLBACK_PRODUCT_NAME}</h1>
       <p className="description">{sale?.itemDescription || FALLBACK_PRODUCT_DESCRIPTION}</p>
 
       {account ? (
@@ -302,7 +389,7 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
         <>
           <div className="live-badge">
             <span className="live-dot" />
-            Live auction : price dropping now
+            {sale ? `Live auction : price drops every ${formatStep(sale.stepDuration)}` : "Live auction"}
           </div>
 
           <div className="price-display">
@@ -321,6 +408,19 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
             <div className="price-range">
               <span>${formatUsdc(sale.startPrice)}</span>
               <span>${formatUsdc(sale.endPrice)}</span>
+            </div>
+          )}
+
+          {nextDrop && (
+            <div className="next-drop">
+              <p className="next-drop-label">Next price drop in</p>
+              <p className="next-drop-countdown">{formatCountdown(nextDrop.msRemaining)}</p>
+              <p className="next-drop-price">
+                → ${formatUsdc(nextDrop.nextPrice)}
+                <span className="next-drop-step">
+                  {" "}· step {nextDrop.stepNumber.toLocaleString("en-US")} of {nextDrop.totalSteps.toLocaleString("en-US")}
+                </span>
+              </p>
             </div>
           )}
 
@@ -355,6 +455,18 @@ function AuctionView({ contractAddress, chain }: { contractAddress: Address; cha
             finalizes.
           </p>
         </>
+      )}
+
+      {/* Mirrors relaunchSale's on-chain condition. auctionEnded comes from the local clock, so a
+          slightly fast one can show this a moment early; the contract then just reverts with
+          SaleStillActive, explained in the error message. */}
+      {sale && !cancelled && (sold || auctionEnded) && (
+        <RelaunchBlock
+          connected={account !== null}
+          onRelaunch={relaunch}
+          relaunchStatus={relaunchStatus}
+          relaunchError={relaunchError}
+        />
       )}
 
       {account && seller && account.toLowerCase() === seller.toLowerCase() && (

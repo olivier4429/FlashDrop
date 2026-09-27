@@ -17,8 +17,11 @@ FlashDrop is one contract with one product live at a time, reusable for the next
 current one is sold or cancelled:
 
 - The seller deploys it with a `startPrice`, an `endPrice`, and a `duration`.
-- `currentPrice()` decays linearly between the two over that duration.
+- `currentPrice()` steps down between the two over that duration, one equal drop every `stepDuration` seconds.
 - `buy()` charges whoever calls it first the price shown at that exact moment, and closes the sale.
+- Demo mode: once a round has sold or reached its floor price, *anyone* can list the next round of
+  the same item, back at the start price, with `relaunchSale()` (the "List the next one" button in
+  the frontend, which numbers each round "<itemName> #<saleId>").
 - Once sold, the seller can arm the *same* contract for the next item with `startNewSale(...)`
   instead of deploying a new one : see [Reusing the contract](#reusing-the-contract-for-a-new-item).
 
@@ -90,7 +93,7 @@ and the RPC URL for the network you're targeting.
 ```
 cd contracts
 ITEM_NAME="Vintage Leather Jacket" ITEM_DESCRIPTION="Size M, one owner, no visible wear." \
-  START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
+  START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 STEP_SECONDS=30 \
   npx hardhat run --build-profile production script/deploy.ts --network arcTestnet
 ```
 
@@ -113,7 +116,7 @@ next item:
 
 ```
 FLASHDROP_ADDRESS=0x... ITEM_NAME="..." ITEM_DESCRIPTION="..." \
-  START_PRICE=... END_PRICE=... DURATION_SECONDS=... \
+  START_PRICE=... END_PRICE=... DURATION_SECONDS=... STEP_SECONDS=... \
   npx hardhat run --build-profile production script/startNewSale.ts --network arcTestnet
 ```
 
@@ -180,7 +183,7 @@ cd contracts && npx hardhat node
 cd contracts
 npx hardhat run script/setupLocalMocks.ts --network localNode
 ITEM_NAME="Vintage Leather Jacket" ITEM_DESCRIPTION="Size M, one owner, no visible wear." \
-  START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 \
+  START_PRICE=100000000 END_PRICE=10000000 DURATION_SECONDS=300 STEP_SECONDS=30 \
   npx hardhat run script/deploy.ts --network localNode
 ```
 

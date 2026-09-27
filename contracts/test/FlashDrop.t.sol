@@ -1,7 +1,7 @@
 // SPDX-License-Identifier: MIT
 pragma solidity ^0.8.24;
 
-import {Test} from "forge-std/Test.sol";
+import {Test, Vm} from "forge-std/Test.sol";
 import {FlashDrop} from "../src/FlashDrop.sol";
 import {ISignatureTransfer} from "../src/interfaces/IPermit2.sol";
 import {MockUSDC} from "./mocks/MockUSDC.sol";
@@ -29,6 +29,7 @@ contract FlashDropTest is Test {
     uint64 constant START_PRICE = 100e6; // 100 USDC
     uint64 constant END_PRICE = 10e6; // 10 USDC
     uint32 constant DURATION = 1000; // seconds
+    uint32 constant STEP = 100; // seconds per price level: 10 equal drops of 9 USDC
 
     address seller = makeAddr("seller");
     uint256 buyerPrivateKey = 0xB0B;
@@ -43,7 +44,7 @@ contract FlashDropTest is Test {
         vm.etch(PERMIT2, vm.parseBytes(vm.trim(vm.readFile(PERMIT2_BYTECODE_PATH))));
 
         vm.prank(seller);
-        drop = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+        drop = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, STEP);
     }
 
     // ---- currentPrice() ----
@@ -56,6 +57,43 @@ contract FlashDropTest is Test {
         vm.warp(block.timestamp + DURATION / 2);
         // Linear decay: halfway through, price is halfway between start and end.
         assertEq(drop.currentPrice(), (START_PRICE + END_PRICE) / 2);
+    }
+
+    function test_currentPrice_constantWithinAStep() public {
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + STEP - 1);
+        assertEq(drop.currentPrice(), START_PRICE, "no drop before the first step ends");
+        vm.warp(t0 + STEP);
+        assertEq(drop.currentPrice(), START_PRICE - 9e6, "first drop exactly at the step boundary");
+        vm.warp(t0 + 2 * STEP - 1);
+        assertEq(drop.currentPrice(), START_PRICE - 9e6, "unchanged until the next boundary");
+    }
+
+    function test_currentPrice_lastStepBeforeFloor() public {
+        vm.warp(block.timestamp + DURATION - 1);
+        assertEq(drop.currentPrice(), END_PRICE + 9e6);
+        vm.warp(block.timestamp + 1);
+        assertEq(drop.currentPrice(), END_PRICE);
+    }
+
+    function test_currentPrice_stepNotDividingDuration() public {
+        // 1000s in 300s steps: levels at 0, 300, 600, 900, then the floor at 1000 (a short last step).
+        vm.prank(seller);
+        FlashDrop d = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, 300);
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + 899);
+        assertEq(d.currentPrice(), START_PRICE - uint256(START_PRICE - END_PRICE) * 600 / DURATION);
+        vm.warp(t0 + 900);
+        assertEq(d.currentPrice(), START_PRICE - uint256(START_PRICE - END_PRICE) * 900 / DURATION);
+        vm.warp(t0 + 1000);
+        assertEq(d.currentPrice(), END_PRICE);
+    }
+
+    function test_currentPrice_stepOfOneIsPerSecond() public {
+        vm.prank(seller);
+        FlashDrop d = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, 1);
+        vm.warp(block.timestamp + 1);
+        assertEq(d.currentPrice(), START_PRICE - uint256(START_PRICE - END_PRICE) / DURATION);
     }
 
     function test_currentPrice_afterEnd() public {
@@ -149,7 +187,7 @@ contract FlashDropTest is Test {
         // already used nonce 0 against one FlashDrop instance cannot reuse it against a second one
         // either, even with a freshly-signed permit for that second contract as spender.
         vm.prank(seller);
-        FlashDrop secondDrop = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+        FlashDrop secondDrop = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, STEP);
         ISignatureTransfer.PermitTransferFrom memory replay = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
         bytes memory replaySig = _signPermitFor(address(secondDrop), buyerPrivateKey, replay);
 
@@ -201,7 +239,7 @@ contract FlashDropTest is Test {
 
         string memory newItemName = "Replacement Item";
         vm.prank(seller);
-        drop.startNewSale(newItemName, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+        drop.startNewSale(newItemName, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, STEP);
 
         assertFalse(drop.cancelled());
         assertEq(drop.itemName(), newItemName);
@@ -219,13 +257,13 @@ contract FlashDropTest is Test {
     function test_startNewSale_revertsIfNotSeller() public {
         _completeASale();
         vm.expectRevert(FlashDrop.NotSeller.selector);
-        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, STEP);
     }
 
     function test_startNewSale_revertsIfCurrentSaleStillActive() public {
         vm.prank(seller);
         vm.expectRevert(FlashDrop.SaleStillActive.selector);
-        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, STEP);
     }
 
     function test_startNewSale_resetsStateForNextItem() public {
@@ -238,7 +276,7 @@ contract FlashDropTest is Test {
         uint32 newDuration = 500;
 
         vm.prank(seller);
-        drop.startNewSale(newItemName, newItemDescription, newStartPrice, newEndPrice, newDuration);
+        drop.startNewSale(newItemName, newItemDescription, newStartPrice, newEndPrice, newDuration, STEP);
 
         assertFalse(drop.sold());
         assertEq(drop.buyer(), address(0));
@@ -265,13 +303,140 @@ contract FlashDropTest is Test {
         assertEq(drop.buyer(), secondBuyer);
     }
 
+    // ---- relaunchSale() (demo mode: anyone, once the round is over) ----
+
+    function test_relaunchSale_byAnyoneAfterSold_startsNewRoundAtStartPrice() public {
+        vm.warp(block.timestamp + DURATION / 2);
+        _completeASale();
+        vm.warp(block.timestamp + 42);
+
+        vm.prank(makeAddr("visitor"));
+        drop.relaunchSale();
+
+        assertEq(drop.saleId(), 2);
+        assertFalse(drop.sold());
+        assertFalse(drop.cancelled());
+        assertEq(drop.buyer(), address(0));
+        assertEq(drop.soldPrice(), 0);
+        assertEq(drop.startTime(), block.timestamp);
+        assertEq(drop.currentPrice(), START_PRICE);
+        assertEq(drop.itemName(), ITEM_NAME);
+        assertEq(drop.itemDescription(), ITEM_DESCRIPTION);
+        assertEq(drop.startPrice(), START_PRICE);
+        assertEq(drop.endPrice(), END_PRICE);
+        assertEq(drop.duration(), DURATION);
+        assertEq(drop.stepDuration(), STEP);
+    }
+
+    function test_relaunchSale_afterFloorReachedUnsold() public {
+        vm.warp(block.timestamp + DURATION);
+        drop.relaunchSale();
+        assertEq(drop.saleId(), 2);
+        assertEq(drop.currentPrice(), START_PRICE);
+    }
+
+    function test_relaunchSale_revertsWhileLive() public {
+        vm.expectRevert(FlashDrop.SaleStillActive.selector);
+        drop.relaunchSale();
+
+        vm.warp(block.timestamp + DURATION - 1);
+        vm.expectRevert(FlashDrop.SaleStillActive.selector);
+        drop.relaunchSale();
+    }
+
+    function test_relaunchSale_revertsIfCancelled_evenAfterFloor() public {
+        vm.prank(seller);
+        drop.cancelSale();
+        vm.warp(block.timestamp + DURATION);
+        vm.expectRevert(FlashDrop.SaleIsCancelled.selector);
+        drop.relaunchSale();
+    }
+
+    function test_relaunchSale_cancelThenStartNewSaleCannotBeRaced() public {
+        // The seller's two-step item swap: once cancelled, nobody can slip a relaunch in between.
+        vm.warp(block.timestamp + DURATION);
+        vm.prank(seller);
+        drop.cancelSale();
+        vm.expectRevert(FlashDrop.SaleIsCancelled.selector);
+        drop.relaunchSale();
+        vm.prank(seller);
+        drop.startNewSale("Other Item", ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, STEP);
+        assertEq(drop.itemName(), "Other Item");
+    }
+
+    function test_relaunchSale_replaysParamsSetByStartNewSale() public {
+        _completeASale();
+        vm.prank(seller);
+        drop.startNewSale("Second Item", "Desc", 50e6, 5e6, 500, 50);
+        vm.warp(block.timestamp + 500);
+
+        drop.relaunchSale();
+
+        assertEq(drop.itemName(), "Second Item");
+        assertEq(drop.startPrice(), 50e6);
+        assertEq(drop.endPrice(), 5e6);
+        assertEq(drop.duration(), 500);
+        assertEq(drop.stepDuration(), 50);
+    }
+
+    function test_relaunchSale_afterSold_emitsOnlySaleStarted() public {
+        _completeASale();
+        vm.recordLogs();
+        drop.relaunchSale();
+        Vm.Log[] memory logs = vm.getRecordedLogs();
+        assertEq(logs.length, 1);
+        assertEq(logs[0].topics[0], FlashDrop.SaleStarted.selector);
+        assertEq(uint256(logs[0].topics[1]), 2);
+    }
+
+    function test_relaunchSale_unsold_closesRoundWithSaleCancelledThenStarts() public {
+        vm.warp(block.timestamp + DURATION);
+        vm.expectEmit(address(drop));
+        emit FlashDrop.SaleCancelled(1, block.timestamp);
+        vm.expectEmit(address(drop));
+        emit FlashDrop.SaleStarted(2, ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, block.timestamp, DURATION, STEP);
+        drop.relaunchSale();
+    }
+
+    function test_relaunchSale_relaunchedSaleIsBuyableAndPaysSeller() public {
+        _completeASale();
+        drop.relaunchSale();
+
+        address secondBuyer = vm.addr(0xC0FFEE);
+        _fundAndApprove(secondBuyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 1, block.timestamp + 1 hours);
+        vm.prank(secondBuyer);
+        drop.buy(_saleId(drop), permit, _signPermitAs(0xC0FFEE, permit));
+
+        assertEq(drop.buyer(), secondBuyer);
+        assertEq(MockUSDC(USDC).balanceOf(seller), 2 * uint256(START_PRICE));
+    }
+
+    function test_buy_revertsIfFloorSaleRelaunchedAfterSigning() public {
+        // Buyer signs for the floor-price round...
+        vm.warp(block.timestamp + DURATION);
+        uint64 seenSaleId = _saleId(drop);
+        _fundAndApprove(buyer, START_PRICE);
+        ISignatureTransfer.PermitTransferFrom memory permit = _buildPermit(START_PRICE, 0, block.timestamp + 1 hours);
+        bytes memory signature = _signPermit(permit);
+
+        // ...a visitor relaunches it (price back to START_PRICE) before the purchase lands...
+        drop.relaunchSale();
+
+        // ...so the purchase is refused rather than charged at the new round's higher price.
+        vm.prank(buyer);
+        vm.expectRevert(abi.encodeWithSelector(FlashDrop.SaleChanged.selector, seenSaleId, uint64(2)));
+        drop.buy(seenSaleId, permit, signature);
+        assertEq(MockUSDC(USDC).balanceOf(buyer), START_PRICE);
+    }
+
     // ---- M-1: a purchase is bound to one specific sale ----
 
     function test_startSale_incrementsSaleId() public {
         assertEq(drop.saleId(), 1);
         _completeASale();
         vm.prank(seller);
-        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, STEP);
         assertEq(drop.saleId(), 2);
     }
 
@@ -286,7 +451,7 @@ contract FlashDropTest is Test {
         // whose price is still under that ceiling.
         vm.startPrank(seller);
         drop.cancelSale();
-        drop.startNewSale("Different Item", ITEM_DESCRIPTION, START_PRICE / 2, END_PRICE, DURATION);
+        drop.startNewSale("Different Item", ITEM_DESCRIPTION, START_PRICE / 2, END_PRICE, DURATION, STEP);
         vm.stopPrank();
 
         vm.prank(buyer);
@@ -346,30 +511,51 @@ contract FlashDropTest is Test {
 
     function test_constructor_revertsIfStartPriceNotAboveEndPrice() public {
         vm.expectRevert(FlashDrop.InvalidPriceRange.selector);
-        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, END_PRICE, END_PRICE, DURATION);
+        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, END_PRICE, END_PRICE, DURATION, STEP);
     }
 
     function test_constructor_revertsIfDurationZero() public {
         vm.expectRevert(FlashDrop.ZeroDuration.selector);
-        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, 0);
+        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, 0, STEP);
+    }
+
+    function test_constructor_revertsOnInvalidStepDuration() public {
+        vm.expectRevert(FlashDrop.InvalidStepDuration.selector);
+        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, 0);
+        vm.expectRevert(FlashDrop.InvalidStepDuration.selector);
+        new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, DURATION, DURATION + 1);
+    }
+
+    function test_constructor_acceptsTenWeeksInHourlySteps() public {
+        // The house-sale configuration: 10 weeks, one drop per hour (1680 levels).
+        uint32 tenWeeks = 10 * 7 days;
+        vm.prank(seller);
+        FlashDrop d = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, 300_000e6, 200_000e6, tenWeeks, 1 hours);
+        uint256 t0 = block.timestamp;
+        vm.warp(t0 + 1 hours - 1);
+        assertEq(d.currentPrice(), 300_000e6);
+        vm.warp(t0 + 5 weeks);
+        assertEq(d.currentPrice(), 250_000e6);
+        vm.warp(t0 + tenWeeks);
+        assertEq(d.currentPrice(), 200_000e6);
     }
 
     function test_startNewSale_revertsOnInvalidParams() public {
         _completeASale();
         vm.startPrank(seller);
         vm.expectRevert(FlashDrop.InvalidPriceRange.selector);
-        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, END_PRICE, START_PRICE, DURATION);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, END_PRICE, START_PRICE, DURATION, STEP);
         vm.expectRevert(FlashDrop.ZeroDuration.selector);
-        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, 0);
+        drop.startNewSale(ITEM_NAME, ITEM_DESCRIPTION, START_PRICE, END_PRICE, 0, STEP);
         vm.stopPrank();
     }
 
     function test_startNewSale_emitsSaleStarted() public {
         _completeASale();
         vm.expectEmit(address(drop));
-        emit FlashDrop.SaleStarted(2, "Next", "Desc", 50e6, 5e6, block.timestamp, 500);
+        emit FlashDrop.SaleStarted(2, "Next", "Desc", 50e6, 5e6, block.timestamp, 500, 50);
         vm.prank(seller);
-        drop.startNewSale("Next", "Desc", 50e6, 5e6, 500);
+        drop.startNewSale("Next", "Desc", 50e6, 5e6, 500, 50);
     }
 
     function test_cancelSale_emitsSaleCancelled() public {
@@ -384,14 +570,20 @@ contract FlashDropTest is Test {
     /// Over the full range of the narrow storage types: the price never rises as time passes, and
     /// always stays within [endPrice, startPrice] : which is also what makes buy()'s
     /// uint64(price) narrowing safe.
-    function testFuzz_currentPrice_monotonicAndBounded(uint64 high, uint64 low, uint32 dur, uint32 t1, uint32 t2)
-        public
-    {
+    function testFuzz_currentPrice_monotonicAndBounded(
+        uint64 high,
+        uint64 low,
+        uint32 dur,
+        uint32 step,
+        uint32 t1,
+        uint32 t2
+    ) public {
         vm.assume(high > low && dur > 0);
+        step = uint32(bound(step, 1, dur));
         (t1, t2) = t1 <= t2 ? (t1, t2) : (t2, t1);
 
         vm.prank(seller);
-        FlashDrop d = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, high, low, dur);
+        FlashDrop d = new FlashDrop(ITEM_NAME, ITEM_DESCRIPTION, high, low, dur, step);
         uint256 t0 = block.timestamp;
 
         vm.warp(t0 + t1);
@@ -406,7 +598,7 @@ contract FlashDropTest is Test {
 
     // ---- storage layout ----
 
-    /// Locks in the 2-slot packing documented in FlashDrop.sol: if a field is reordered or
+    /// Locks in the 3-slot packing documented in FlashDrop.sol: if a field is reordered or
     /// widened, buy() silently goes back to touching more cold slots, and this test catches it.
     function test_storageLayout_isPacked() public {
         _completeASale();
@@ -423,6 +615,10 @@ contract FlashDropTest is Test {
         assertEq(uint64(slot1 >> 64), END_PRICE, "slot1: endPrice");
         assertEq(uint64(slot1 >> 128), drop.soldPrice(), "slot1: soldPrice");
         assertEq(uint64(slot1 >> 192), 1, "slot1: saleId");
+
+        uint256 slot2 = uint256(vm.load(address(drop), bytes32(uint256(2))));
+        assertEq(uint32(slot2), STEP, "slot2: stepDuration");
+        assertEq(slot2 >> 32, 0, "slot2: nothing else packed here");
     }
 
     // ---- helpers ----

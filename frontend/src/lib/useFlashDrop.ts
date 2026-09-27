@@ -22,6 +22,7 @@ export interface SaleParams {
   endPrice: bigint;
   startTime: bigint; // unix seconds
   duration: bigint; // seconds
+  stepDuration: bigint; // seconds each price level lasts
   // Which sale these params belong to (FlashDrop increments it on every startNewSale). Passed back
   // into buy() so the contract rejects the purchase if the item was replaced after the buyer
   // looked at it : see FlashDrop.buy().
@@ -40,23 +41,32 @@ export type BuyStatus =
 
 export type AdminStatus = "idle" | "starting" | "cancelling" | "done" | "error";
 
+export type RelaunchStatus = "idle" | "relaunching" | "error";
+
 export interface NewSaleInput {
   itemName: string;
   itemDescription: string;
   startPrice: bigint;
   endPrice: bigint;
   durationSeconds: bigint;
+  stepSeconds: bigint;
 }
 
-// Mirrors FlashDrop.currentPrice()'s linear decay so the UI can tick every animation frame
-// without hitting the RPC on every render. This is only a client-side visual approximation of
-// wall-clock time : the price actually charged is whatever the contract computes from
+// Mirrors FlashDrop.currentPrice()'s stepped decay (same integer arithmetic) so the UI can tick
+// without hitting the RPC on every render. The client clock only decides *when* the display
+// switches to the next level : the price actually charged is whatever the contract computes from
 // block.timestamp at the moment `buy()` is included on-chain, not whatever this function returns.
 function priceAtElapsed(sale: SaleParams, elapsedSeconds: bigint): bigint {
   if (elapsedSeconds >= sale.duration) return sale.endPrice;
   if (elapsedSeconds <= 0n) return sale.startPrice;
-  const drop = ((sale.startPrice - sale.endPrice) * elapsedSeconds) / sale.duration;
+  const stepStart = (elapsedSeconds / sale.stepDuration) * sale.stepDuration;
+  const drop = ((sale.startPrice - sale.endPrice) * stepStart) / sale.duration;
   return sale.startPrice - drop;
+}
+
+// Ceiling division: a last step shorter than stepDuration still counts as a step.
+function totalSteps(sale: SaleParams): bigint {
+  return (sale.duration + sale.stepDuration - 1n) / sale.stepDuration;
 }
 
 function randomNonce(): bigint {
@@ -79,12 +89,13 @@ const REVERT_MESSAGES: Record<string, string> = {
   AlreadyCancelled: "This sale was already cancelled.",
   SaleIsCancelled: "The seller cancelled this sale. You were not charged.",
   SaleChanged:
-    "The seller replaced this item after you clicked Buy, so the purchase was refused and you were not charged. Check the new item and try again.",
+    "The sale was restarted or replaced after you clicked Buy, so the purchase was refused and you were not charged. Check the new price and try again.",
   PermitTokenNotUSDC: "The signed permit was not for USDC.",
   SignedAmountBelowPrice:
     "The on-chain price was above the amount you signed for (your device clock may be off). Try again.",
   InvalidPriceRange: "The start price must be higher than the end price.",
   ZeroDuration: "The duration must be at least 1 second.",
+  InvalidStepDuration: "The step must be between 1 second and the whole sale duration.",
   SignatureExpired: "Your signature expired before the purchase landed. Try again.",
   InvalidNonce: "This signature was already used. Try again.",
   InvalidAmount: "The purchase asked for more than the amount you signed for.",
@@ -94,11 +105,20 @@ const REVERT_MESSAGES: Record<string, string> = {
   InvalidContractSignature: "Your smart-wallet signature could not be verified. Try again.",
 };
 
-function describeError(err: unknown): string {
+// relaunchSale's conditions differ from startNewSale's (a floor-price round counts as over; a
+// cancelled one can never be relaunched), so the same error names need different wording.
+const RELAUNCH_REVERT_MESSAGES: Record<string, string> = {
+  SaleStillActive:
+    "This listing is still live : the next one can be listed once it sells or reaches its floor price (your device clock may be slightly ahead).",
+  SaleIsCancelled: "The seller took this listing off the market : only the seller can start the next one.",
+};
+
+function describeError(err: unknown, overrides?: Record<string, string>): string {
   if (err instanceof BaseError) {
     const revert = err.walk((e) => e instanceof ContractFunctionRevertedError);
     if (revert instanceof ContractFunctionRevertedError) {
       const name = revert.data?.errorName;
+      if (name && overrides?.[name]) return overrides[name];
       if (name && REVERT_MESSAGES[name]) return REVERT_MESSAGES[name];
     }
     return err.shortMessage;
@@ -153,6 +173,9 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   // is what stops the buy button reading "Purchased!" for a new item after the same wallet bought
   // a previous one in this session : see the reset below.
   const prevSoldRef = useRef<boolean | null>(null);
+  // Same idea keyed on saleId, which also catches a relaunch of a sale that never sold (sold stays
+  // false throughout, so prevSoldRef alone never sees a transition).
+  const prevSaleIdRef = useRef<bigint | null>(null);
 
   const [seller, setSeller] = useState<Address | null>(null);
   const [sale, setSale] = useState<SaleParams | null>(null);
@@ -171,6 +194,8 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   // the frontend could still be showing a stale `cancelled === true` for a moment and mislabel the
   // success message "Sale cancelled." instead of "New sale started.".
   const [adminAction, setAdminAction] = useState<"start" | "cancel" | null>(null);
+  const [relaunchStatus, setRelaunchStatus] = useState<RelaunchStatus>("idle");
+  const [relaunchError, setRelaunchError] = useState<string | null>(null);
   // Null while the very first read is still in flight; a message once a read has actually failed
   // (e.g. VITE_FLASHDROP_ADDRESS points at a network the wallet isn't currently reading, since the
   // app uses one address across all networks in the dropdown rather than one per network).
@@ -190,6 +215,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setCancelled(false);
     setReadError(null);
     prevSoldRef.current = null;
+    prevSaleIdRef.current = null;
   }, [chain, contractAddress]);
 
   // Polls the full sale state, including itemName/itemDescription/startPrice/endPrice/startTime/
@@ -202,7 +228,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
   //
   // Batched into a single `multicall` (Multicall3, deployed on Arc at the standard canonical
   // address, configured per chain in arcChain.ts : viem has no global default; see
-  // docs/arc-notes/03-adresses-contrats.md) instead of 12 separate eth_call
+  // docs/arc-notes/03-adresses-contrats.md) instead of 13 separate eth_call
   // requests: Arc's public testnet RPC rate-limits (HTTP 429) a client polling this often with many
   // parallel requests every cycle, which surfaced as a misleading "no contract found" error even
   // though the contract and address were both correct : one request per poll avoids that entirely.
@@ -246,6 +272,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
             { address: contractAddress, abi: flashDropAbi, functionName: "buyer" },
             { address: contractAddress, abi: flashDropAbi, functionName: "soldPrice" },
             { address: contractAddress, abi: flashDropAbi, functionName: "saleId" },
+            { address: contractAddress, abi: flashDropAbi, functionName: "stepDuration" },
           ],
           allowFailure: false,
         })
@@ -282,6 +309,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
         currentBuyer,
         price,
         currentSaleId,
+        stepDuration,
       ] = results;
       setReadError(null);
       setSeller(sellerAddress);
@@ -294,6 +322,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
         endPrice,
         startTime: BigInt(startTime),
         duration: BigInt(duration),
+        stepDuration: BigInt(stepDuration),
         saleId: currentSaleId,
       });
       setSold(isSold);
@@ -308,6 +337,15 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
         setError(null);
       }
       prevSoldRef.current = isSold;
+      // A new round started (startNewSale or anyone's relaunchSale): every wallet's buy status and
+      // error from the previous round no longer applies, and a pending "Restarting…" is now done.
+      if (prevSaleIdRef.current !== null && prevSaleIdRef.current !== currentSaleId) {
+        setStatus("idle");
+        setError(null);
+        setRelaunchStatus("idle");
+        setRelaunchError(null);
+      }
+      prevSaleIdRef.current = currentSaleId;
       scheduleNext(isSold ? 3000 : 750);
     };
 
@@ -338,6 +376,23 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     : 0n;
   const displayedPrice = sale ? priceAtElapsed(sale, elapsedSeconds) : null;
   const auctionEnded = sale ? elapsedSeconds >= sale.duration : false;
+
+  // Countdown to the next price drop, from the client clock: the next step boundary, or the end of
+  // the sale for a last step shorter than stepDuration. Null once the price is at its floor.
+  // Milliseconds rather than whole seconds so the display counts down smoothly between polls.
+  const nextDrop = useMemo(() => {
+    if (!sale || auctionEnded) return null;
+    const currentStep = elapsedSeconds / sale.stepDuration;
+    const nextBoundary = (currentStep + 1n) * sale.stepDuration;
+    const nextElapsed = nextBoundary < sale.duration ? nextBoundary : sale.duration;
+    const atMs = (Number(sale.startTime) + Number(nextElapsed)) * 1000;
+    return {
+      msRemaining: Math.max(0, atMs - nowMs),
+      nextPrice: priceAtElapsed(sale, nextElapsed),
+      stepNumber: currentStep + 1n, // 1-based, for "step 3 of 1680"
+      totalSteps: totalSteps(sale),
+    };
+  }, [sale, auctionEnded, elapsedSeconds, nowMs]);
 
   const connect = useCallback(async () => {
     setError(null);
@@ -370,6 +425,8 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     setAdminStatus("idle");
     setAdminError(null);
     setAdminAction(null);
+    setRelaunchStatus("idle");
+    setRelaunchError(null);
   }, []);
 
   // Follows account/network changes made inside the wallet itself (e.g. picking another account
@@ -545,7 +602,14 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
           address: contractAddress,
           abi: flashDropAbi,
           functionName: "startNewSale",
-          args: [input.itemName, input.itemDescription, input.startPrice, input.endPrice, Number(input.durationSeconds)],
+          args: [
+            input.itemName,
+            input.itemDescription,
+            input.startPrice,
+            input.endPrice,
+            Number(input.durationSeconds),
+            Number(input.stepSeconds),
+          ],
         } as const;
         const hash = await wallet.writeContract({ ...request, chain });
         await waitForSuccess(publicClient, hash, (blockNumber) =>
@@ -590,6 +654,35 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     }
   }, [account, publicClient, contractAddress, chain]);
 
+  // Demo mode: open to ANY connected wallet once the current round has sold or reached its floor
+  // (see relaunchSale in FlashDrop.sol). Starts the next round of the same item from its start
+  // price with the seller's last parameters : the caller passes no arguments, so all it spends
+  // is the transaction's gas (paid in USDC on Arc).
+  const relaunch = useCallback(async () => {
+    const wallet = walletClientRef.current;
+    if (!wallet || !account) return;
+    setRelaunchError(null);
+    setRelaunchStatus("relaunching");
+    try {
+      const request = {
+        account,
+        address: contractAddress,
+        abi: flashDropAbi,
+        functionName: "relaunchSale",
+        args: [],
+      } as const;
+      const hash = await wallet.writeContract({ ...request, chain });
+      await waitForSuccess(publicClient, hash, (blockNumber) =>
+        publicClient.simulateContract({ ...request, blockNumber }),
+      );
+      // Success: status goes back to idle once the poll sees the new saleId (above), so the
+      // button doesn't flash "Restart" again over a countdown that hasn't refreshed yet.
+    } catch (err) {
+      setRelaunchError(describeError(err, RELAUNCH_REVERT_MESSAGES));
+      setRelaunchStatus("error");
+    }
+  }, [account, publicClient, contractAddress, chain]);
+
   return {
     account,
     connect,
@@ -603,6 +696,7 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     sale,
     displayedPrice,
     auctionEnded,
+    nextDrop,
     sold,
     cancelled,
     buyer,
@@ -612,5 +706,8 @@ export function useFlashDrop(contractAddress: Address, chain: Chain) {
     buyNow,
     readError,
     needsPermit2Approval,
+    relaunch,
+    relaunchStatus,
+    relaunchError,
   };
 }
