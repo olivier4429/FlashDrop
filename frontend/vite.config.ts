@@ -3,7 +3,7 @@ import react from '@vitejs/plugin-react'
 import { createPublicClient, http, isAddress } from 'viem'
 import { defineConfig, loadEnv } from 'vite'
 
-// Chain IDs from docs/arc-notes/01-fondamentaux-reseau.md (same values as src/lib/arcChain.ts).
+// Chain IDs from docs/arc-notes/01-fondamentaux-reseau.md (same values as src/chain/arcChain.ts).
 const ARC_MAINNET = { id: 5042, rpcEnv: 'VITE_ARC_MAINNET_RPC_URL', defaultRpc: 'https://rpc.mainnet.arc.io' }
 const ARC_TESTNET = { id: 5042002, rpcEnv: 'VITE_ARC_TESTNET_RPC_URL', defaultRpc: 'https://rpc.testnet.arc.io' }
 

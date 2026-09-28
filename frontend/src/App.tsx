@@ -1,9 +1,9 @@
 import { useState, type FormEvent } from "react";
 import { formatUnits, isAddress, parseUnits, type Address } from "viem";
-import { DEFAULT_NETWORK_INDEX, NETWORK_LOCKED, NETWORKS } from "./lib/arcChain";
-import { useFlashDrop } from "./lib/useFlashDrop";
+import { DEFAULT_NETWORK_INDEX, NETWORK_LOCKED, NETWORKS } from "./chain/arcChain";
+import { useFlashDrop } from "./chain/useFlashDrop";
 // Disabled for now along with HistoryPanel below : see the comment at its render site.
-// import { useSaleHistory } from "./lib/useSaleHistory";
+// import { useSaleHistory } from "./chain/useSaleHistory";
 import "./App.css";
 
 const CONTRACT_ADDRESS = import.meta.env.VITE_FLASHDROP_ADDRESS as string | undefined;

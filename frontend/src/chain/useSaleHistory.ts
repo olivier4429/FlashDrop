@@ -11,7 +11,7 @@ export interface PastSale {
   blockNumber: bigint;
 }
 
-// Duplicated from abi.ts's `flashDropAbi` rather than filtered out of it, so these stay plain
+// Duplicated from abi/flashDrop.ts's `flashDropAbi` rather than filtered out of it, so these stay plain
 // `AbiEvent` literals : exactly what viem's `getLogs({ events })` expects : instead of a member of
 // flashDropAbi's full function-or-event union.
 const saleStartedEvent = {

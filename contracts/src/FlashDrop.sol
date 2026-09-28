@@ -108,7 +108,7 @@ contract FlashDrop {
     // Custom errors instead of require(..., "string"): each revert reason is a 4-byte selector
     // (plus its arguments) rather than an ABI-encoded string stored in the bytecode, which makes
     // the contract smaller and every failed call cheaper. Frontends decode them by name from the
-    // ABI (see frontend/src/lib/abi.ts).
+    // ABI (see frontend/src/chain/abi/flashDrop.ts).
     error NotSeller();
     error SaleStillActive();
     error AlreadySold();

@@ -11,7 +11,7 @@ React + Vite + viem. Local development and the contract side are covered in the 
 | **Preview** | every other branch / pull request | Arc **testnet** (`5042002`) | a testnet FlashDrop |
 
 The public site is pinned to its environment's network. The network dropdown is hidden in
-production builds (`NETWORK_LOCKED` in `src/lib/arcChain.ts`), since each deployment has exactly
+production builds (`NETWORK_LOCKED` in `src/chain/arcChain.ts`), since each deployment has exactly
 one contract address. The dropdown stays available under `npm run dev`.
 
 Everything Vercel needs is in [`vercel.json`](vercel.json) (build settings, security headers,

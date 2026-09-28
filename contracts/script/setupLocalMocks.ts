@@ -19,7 +19,7 @@ const PERMIT2_ADDRESS = "0x000000000022D473030F116dDEE9F6B43aC78BA3";
 
 // Multicall3 : deployed on Arc mainnet/testnet at this canonical address (confirmed via
 // eth_getCode on 2026-09-18), and what the frontend batches its reads through (see
-// frontend/src/lib/arcChain.ts). A vanilla Hardhat node has no contract here by default, so local
+// frontend/src/chain/arcChain.ts). A vanilla Hardhat node has no contract here by default, so local
 // testing needs it placed manually too, or the frontend's multicall() calls fail on this network
 // specifically while working fine against the real ones.
 const MULTICALL3_ADDRESS = "0xcA11bde05977b3631167028862bE2a173976CA11";

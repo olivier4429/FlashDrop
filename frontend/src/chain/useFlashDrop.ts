@@ -13,7 +13,8 @@ import {
   maxUint256,
 } from "viem";
 import { PERMIT2_ADDRESS, USDC_ADDRESS } from "./arcChain";
-import { erc20Abi, flashDropAbi } from "./abi";
+import { erc20Abi } from "./abi/erc20";
+import { flashDropAbi } from "./abi/flashDrop";
 
 export interface SaleParams {
   itemName: string;
@@ -81,7 +82,7 @@ type ArcPublicClient = ReturnType<typeof createPublicClient>;
 
 // Plain-language text for each custom error a write can revert with : FlashDrop's own, plus
 // Permit2's, which bubble up unchanged through buy(). Keyed by error name, which viem decodes from
-// the revert data using the error entries in abi.ts.
+// the revert data using the error entries in abi/flashDrop.ts.
 const REVERT_MESSAGES: Record<string, string> = {
   NotSeller: "Only the seller can do this.",
   SaleStillActive: "The current sale is still active : cancel it first, or wait until it sells.",
